@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#252a30">
+  <title>Journal | STANDOUT Building &amp; Construction</title>
+  <meta name="description" content="News, articles and project updates from STANDOUT Building & Construction in Nairobi.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="public-page">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="STANDOUT Building and Construction home"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="STANDOUT Building & Construction"></a>
+    <nav class="site-nav public-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/journal" aria-current="page">Journal</a><a href="/community">Reviews &amp; comments</a><a class="button" href="/#contact">Discuss your project</a></nav>
+  </header>
+  <main class="editorial-main">
+    <section class="editorial-hero">
+      <span class="eyebrow">Ideas, updates &amp; experience</span>
+      <h1 class="display">The STANDOUT journal.</h1>
+      <p>Company news, practical building insights and updates from our work in Nairobi and beyond.</p>
+    </section>
+    <section class="editorial-content" aria-label="Published articles">
+      {% if posts %}
+        <div class="editorial-grid">
+          {% for post in posts %}
+            <article class="editorial-card">
+              {% if post.cover_image_url %}<a class="editorial-card-image" href="{{ url_for('journal_post', slug=post.slug) }}"><img src="{{ post.cover_image_url }}" alt="" loading="lazy"></a>{% endif %}
+              <div class="editorial-card-content">
+                <div class="editorial-meta"><span>{{ post.content_type|replace('_', ' ') }}</span><time>{{ post.published_at.strftime('%d %b %Y') if post.published_at else '' }}</time></div>
+                <h2><a href="{{ url_for('journal_post', slug=post.slug) }}">{{ post.title }}</a></h2>
+                <p>{{ post.summary or post.body[:220] }}{% if not post.summary and post.body|length > 220 %}…{% endif %}</p>
+                <a class="text-link" href="{{ url_for('journal_post', slug=post.slug) }}">Read more <span aria-hidden="true">→</span></a>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+        {% if has_previous or has_next %}
+          <nav class="page-nav" aria-label="Journal pages">
+            {% if has_previous %}<a class="admin-button" href="{{ url_for('journal', page=page - 1) }}">← Newer articles</a>{% endif %}
+            <span>Page {{ page }}</span>
+            {% if has_next %}<a class="admin-button" href="{{ url_for('journal', page=page + 1) }}">Older articles →</a>{% endif %}
+          </nav>
+        {% endif %}
+      {% else %}
+        <div class="editorial-empty"><span class="eyebrow">Coming soon</span><h2 class="display">Our first stories are on the way.</h2><p>Check back for articles, company news and project updates from STANDOUT B&amp;C.</p><a class="button button-dark" href="/#contact">Talk to our team</a></div>
+      {% endif %}
+    </section>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="" loading="lazy"><span>Building with confidence in Nairobi.</span></div><div class="footer-links"><a href="/">Home</a><a href="/journal">Journal</a><a href="/community">Reviews &amp; comments</a><a href="/#contact">Contact</a><span>© STANDOUT B&amp;C</span></div></div></footer>
+</body>
+</html>

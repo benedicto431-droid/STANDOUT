@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#252a30">
+  <title>Content manager | STANDOUT B&amp;C</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <a class="admin-brand" href="/admin"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="STANDOUT Building & Construction"><span>Admin workspace</span></a>
+    <nav class="admin-tools" aria-label="Admin pages">
+      <a href="/admin">Inbox</a><a class="current" href="/admin/content">Content</a><a href="/admin/submissions">Reviews &amp; comments</a>
+    </nav>
+    <div class="admin-header-right"><a href="/journal" target="_blank" rel="noopener">View journal</a><a href="/admin/logout">Sign out</a></div>
+  </header>
+  <main class="cms-layout">
+    <section class="cms-main">
+      <div class="cms-page-heading">
+        <div><span class="eyebrow">Website publishing</span><h1 class="display">Content library</h1><p>Create and publish updates, articles, blog posts and other company content.</p></div>
+        <a class="button" href="/admin/content">New content</a>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for category, message in messages %}<p class="flash-message {{ category }}" role="status">{{ message }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <div class="cms-columns">
+        <section class="cms-editor">
+          <div class="cms-section-heading"><div><span class="eyebrow">{{ 'Edit content' if editing_post else 'New content' }}</span><h2 class="display">{{ editing_post.title if editing_post else 'Write something useful.' }}</h2></div></div>
+          <form class="cms-form" method="post" action="/admin/content/save">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if editing_post %}<input type="hidden" name="post_id" value="{{ editing_post.id }}">{% endif %}
+            <div class="field"><label for="content-title">Title</label><input id="content-title" name="title" required maxlength="180" value="{{ editing_post.title if editing_post else '' }}" placeholder="A clear, useful headline"></div>
+            <div class="field"><label for="content-slug">URL slug <span>(optional)</span></label><input id="content-slug" name="slug" maxlength="200" value="{{ editing_post.slug if editing_post else '' }}" placeholder="created-from-the-title-if-empty"></div>
+            <div class="cms-form-row">
+              <div class="field"><label for="content-type">Content type</label><select id="content-type" name="content_type">{% for key, label in content_types.items() %}<option value="{{ key }}" {% if editing_post and editing_post.content_type == key %}selected{% elif not editing_post and key == 'article' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+              <div class="field"><label for="content-status">Publishing status</label><select id="content-status" name="status"><option value="draft" {% if not editing_post or editing_post.status == 'draft' %}selected{% endif %}>Save as draft</option><option value="published" {% if editing_post and editing_post.status == 'published' %}selected{% endif %}>Publish on website</option></select></div>
+            </div>
+            <div class="field"><label for="content-summary">Short summary</label><textarea id="content-summary" name="summary" maxlength="400" rows="3" placeholder="A short introduction shown in the journal.">{{ editing_post.summary if editing_post else '' }}</textarea><small class="field-help">Up to 400 characters.</small></div>
+            <div class="field"><label for="content-body">Article text</label><textarea id="content-body" name="body" required maxlength="30000" rows="13" placeholder="Write the article or update here.">{{ editing_post.body if editing_post else '' }}</textarea><small class="field-help">Plain text; line breaks are preserved. Maximum 30,000 characters.</small></div>
+            <div class="field"><label for="content-image">Cover image URL <span>(optional)</span></label><input id="content-image" name="cover_image_url" type="url" maxlength="1000" value="{{ editing_post.cover_image_url if editing_post and editing_post.cover_image_url else '' }}" placeholder="https://example.com/image.jpg"><small class="field-help">Use an image URL. For persistent image hosting, use a durable public image host.</small></div>
+            <div class="cms-form-actions"><button class="button button-dark" type="submit">{{ 'Save changes' if editing_post else 'Save content' }}</button>{% if editing_post %}<a class="admin-button" href="/admin/content">Cancel edit</a>{% endif %}</div>
+          </form>
+        </section>
+        <section class="cms-library">
+          <div class="cms-section-heading"><div><span class="eyebrow">All entries</span><h2 class="display">Your content</h2></div><span class="inbox-count">{{ posts|length }}</span></div>
+          {% if posts %}
+            <div class="cms-post-list">
+              {% for post in posts %}
+                <article class="cms-post-item">
+                  <div class="cms-post-meta"><span>{{ content_types.get(post.content_type, 'Content') }}</span><span class="status-pill {{ 'resolved' if post.status == 'draft' else '' }}">{{ post.status }}</span></div>
+                  <h3>{{ post.title }}</h3>
+                  <p>{{ post.summary or post.body[:150] }}{% if post.body|length > 150 and not post.summary %}…{% endif %}</p>
+                  <div class="cms-post-actions"><a class="admin-button" href="/admin/content?edit={{ post.id }}">Edit</a>{% if post.status == 'published' %}<a class="admin-button" href="{{ url_for('journal_post', slug=post.slug) }}" target="_blank" rel="noopener">View</a>{% endif %}
+                    <form method="post" action="/admin/content/{{ post.id }}/delete" data-confirm="Delete this content? Approved comments will remain in the community area.">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="admin-button danger" type="submit">Delete</button>
+                    </form>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="cms-empty"><strong>No content yet.</strong><p>Save a draft or publish your first article using the form.</p></div>
+          {% endif %}
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

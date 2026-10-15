@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#252a30">
+  <title>Reviews &amp; comments | STANDOUT B&amp;C</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <a class="admin-brand" href="/admin"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="STANDOUT Building & Construction"><span>Admin workspace</span></a>
+    <nav class="admin-tools" aria-label="Admin pages">
+      <a href="/admin">Inbox</a><a href="/admin/content">Content</a><a class="current" href="/admin/submissions">Reviews &amp; comments{% if pending_count %}<b class="nav-count">{{ pending_count }}</b>{% endif %}</a>
+    </nav>
+    <div class="admin-header-right"><a href="/community" target="_blank" rel="noopener">View community</a><a href="/admin/logout">Sign out</a></div>
+  </header>
+  <main class="cms-layout">
+    <section class="cms-main">
+      <div class="cms-page-heading">
+        <div><span class="eyebrow">Visitor submissions</span><h1 class="display">Reviews &amp; comments</h1><p>Only approved submissions appear publicly. Review each message before publishing it.</p></div>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for category, message in messages %}<p class="flash-message {{ category }}" role="status">{{ message }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <nav class="submission-filters" aria-label="Filter submissions">
+        <a class="{% if status_filter == 'pending' %}active{% endif %}" href="/admin/submissions?status=pending">Pending <span>{{ pending_count }}</span></a>
+        <a class="{% if status_filter == 'approved' %}active{% endif %}" href="/admin/submissions?status=approved">Approved</a>
+        <a class="{% if status_filter == 'all' %}active{% endif %}" href="/admin/submissions?status=all">All</a>
+      </nav>
+      {% if submissions %}
+        <div class="submission-list">
+          {% for submission in submissions %}
+            <article class="submission-card">
+              <div class="submission-card-head">
+                <div><span class="submission-kind">{{ submission.kind }}{% if submission.kind == 'review' and submission.rating %} · {{ '★' * submission.rating }}{% endif %}</span><h2>{{ submission.name }}</h2></div>
+                <time>{{ submission.created_at.strftime('%d %b %Y, %H:%M') }} UTC</time>
+              </div>
+              <p class="submission-body">{{ submission.body }}</p>
+              <div class="submission-card-foot">
+                <div class="submission-contact">{% if submission.email %}<a href="mailto:{{ submission.email }}">{{ submission.email }}</a>{% else %}<span>No email provided</span>{% endif %}
+                  {% if submission.post_id %}<span>Article comment</span>{% endif %}
+                  <span class="status-pill {{ 'resolved' if submission.status == 'approved' else '' }}">{{ submission.status }}</span>
+                </div>
+                <div class="submission-actions">
+                  {% if submission.status != 'approved' %}
+                    <form method="post" action="/admin/submissions/{{ submission.id }}/approve">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="admin-button resolve" type="submit">Approve</button>
+                    </form>
+                  {% endif %}
+                  <form method="post" action="/admin/submissions/{{ submission.id }}/delete" data-confirm="Permanently delete this submission?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="admin-button danger" type="submit">Delete</button>
+                  </form>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="cms-empty"><strong>Nothing to review here.</strong><p>New visitor submissions will appear in this list.</p></div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

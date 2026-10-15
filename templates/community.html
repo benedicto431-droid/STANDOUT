@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#252a30">
+  <title>Reviews &amp; comments | STANDOUT B&amp;C</title>
+  <meta name="description" content="Read community reviews and share feedback with STANDOUT Building & Construction.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="public-page">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="STANDOUT Building and Construction home"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="STANDOUT Building & Construction"></a>
+    <nav class="site-nav public-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/journal">Journal</a><a href="/community" aria-current="page">Reviews &amp; comments</a><a class="button" href="/#contact">Discuss your project</a></nav>
+  </header>
+  <main class="editorial-main">
+    <section class="editorial-hero">
+      <span class="eyebrow">A community built on trust</span>
+      <h1 class="display">Your feedback matters.</h1>
+      <p>Read approved feedback and share your experience or a general comment with STANDOUT B&amp;C.</p>
+    </section>
+    <section class="community-content">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for category, message in messages %}<p class="flash-message {{ category }}" role="status">{{ message }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <div class="community-columns">
+        <section class="community-feed">
+          <div class="section-heading"><div><span class="eyebrow">Client feedback</span><h2 class="display">Reviews</h2></div></div>
+          {% if reviews %}
+            <div class="review-list">
+              {% for review in reviews %}<article class="review-card"><div class="review-stars" aria-label="{{ review.rating }} out of 5 stars">{{ '★' * review.rating }}<span>{{ '☆' * (5 - review.rating) }}</span></div><blockquote>{{ review.body }}</blockquote><div class="review-attribution"><strong>{{ review.name }}</strong><time>{{ review.created_at.strftime('%d %b %Y') }}</time></div></article>{% endfor %}
+            </div>
+          {% else %}
+            <div class="editorial-empty compact"><h3 class="display">No reviews published yet.</h3><p>When a review is approved by management, it will appear here.</p></div>
+          {% endif %}
+          <div class="section-heading community-comments-heading"><div><span class="eyebrow">From visitors</span><h2 class="display">Comments</h2></div></div>
+          {% if comments %}
+            <div class="public-comment-list">{% for comment in comments %}<article class="public-comment"><div><strong>{{ comment.name }}</strong><time>{{ comment.created_at.strftime('%d %b %Y') }}</time></div><p>{{ comment.body }}</p></article>{% endfor %}</div>
+          {% else %}
+            <p class="muted-copy">No general comments have been published yet.</p>
+          {% endif %}
+        </section>
+        <section class="community-share" id="share">
+          <span class="eyebrow">Share your experience</span>
+          <h2 class="display">Tell us what you think.</h2>
+          <p>Reviews and comments are checked by our team before publication. Your email is only used if we need to follow up and is never displayed publicly.</p>
+          <form class="public-form" method="post" action="/community#share">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="honeypot" aria-hidden="true"><label for="community-website">Leave this field empty</label><input id="community-website" name="website" tabindex="-1" autocomplete="off"></div>
+            <div class="field"><label for="submission-kind">What are you sharing?</label><select id="submission-kind" name="kind" required><option value="review">A review</option><option value="comment">A general comment</option></select></div>
+            <div class="field"><label for="review-name">Your name</label><input id="review-name" name="name" required maxlength="100" autocomplete="name"></div>
+            <div class="field"><label for="review-email">Email <span>(optional, not published)</span></label><input id="review-email" name="email" type="email" maxlength="254" autocomplete="email"></div>
+            <div class="field" id="rating-field"><label for="review-rating">Your rating</label><select id="review-rating" name="rating"><option value="">Choose a rating</option><option value="5">★★★★★ — Excellent</option><option value="4">★★★★☆ — Very good</option><option value="3">★★★☆☆ — Good</option><option value="2">★★☆☆☆ — Fair</option><option value="1">★☆☆☆☆ — Poor</option></select></div>
+            <div class="field"><label for="review-body">Your message</label><textarea id="review-body" name="body" rows="6" required maxlength="3000" placeholder="Share a specific experience or comment…"></textarea></div>
+            <button class="button button-dark" type="submit">Send for review</button>
+            <small>Submissions remain private until they are approved by management.</small>
+          </form>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="" loading="lazy"><span>Building with confidence in Nairobi.</span></div><div class="footer-links"><a href="/">Home</a><a href="/journal">Journal</a><a href="/community">Reviews &amp; comments</a><a href="/#contact">Contact</a><span>© STANDOUT B&amp;C</span></div></div></footer>
+  <script>
+    const kindField = document.getElementById("submission-kind");
+    const ratingField = document.getElementById("rating-field");
+    const ratingSelect = document.getElementById("review-rating");
+    function updateRatingRequirement() {
+      const isReview = kindField.value === "review";
+      ratingField.hidden = !isReview;
+      ratingSelect.required = isReview;
+    }
+    kindField.addEventListener("change", updateRatingRequirement);
+    updateRatingRequirement();
+  </script>
+</body>
+</html>

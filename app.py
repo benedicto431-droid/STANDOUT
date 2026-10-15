@@ -1,8 +1,10 @@
 import hmac
 import os
+import re
 import secrets
 from datetime import datetime, timezone
 from functools import wraps
+from urllib.parse import urlsplit
 
 import requests
 from flask import (
@@ -121,7 +123,50 @@ class Message(Base):
     conversation = relationship("Conversation", back_populates="messages")
 
 
+class ContentPost(Base):
+    __tablename__ = "content_posts"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(180), nullable=False)
+    slug = Column(String(200), nullable=False, unique=True, index=True)
+    content_type = Column(String(32), nullable=False, default="article", index=True)
+    summary = Column(String(400), nullable=False, default="")
+    body = Column(Text, nullable=False)
+    cover_image_url = Column(String(1000), nullable=True)
+    status = Column(String(16), nullable=False, default="draft", index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    published_at = Column(DateTime, nullable=True, index=True)
+
+
+class PublicSubmission(Base):
+    __tablename__ = "public_submissions"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(16), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    email = Column(String(254), nullable=True)
+    rating = Column(Integer, nullable=True)
+    body = Column(Text, nullable=False)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    post_id = Column(
+        Integer,
+        ForeignKey("content_posts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
 Base.metadata.create_all(engine)
+
+CONTENT_TYPES = {
+    "blog": "Blog post",
+    "article": "Article",
+    "news": "News",
+    "project_update": "Project update",
+    "other": "Other",
+}
 
 
 def csrf_token():
@@ -285,12 +330,149 @@ def cohere_reply(message, history):
 
 @app.get("/")
 def home():
-    return render_template("index.html")
+    with DatabaseSession() as db:
+        recent_posts = (
+            db.query(ContentPost)
+            .filter_by(status="published")
+            .order_by(desc(ContentPost.published_at), desc(ContentPost.id))
+            .limit(3)
+            .all()
+        )
+        recent_reviews = (
+            db.query(PublicSubmission)
+            .filter_by(kind="review", status="approved")
+            .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
+            .limit(3)
+            .all()
+        )
+        return render_template(
+            "index.html",
+            recent_posts=recent_posts,
+            recent_reviews=recent_reviews,
+        )
+
+
+def make_slug(value):
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug[:200].strip("-")
+
+
+def save_public_submission(kind, post_id=None):
+    name = request.form.get("name", "").strip()
+    email = request.form.get("email", "").strip()
+    body = request.form.get("body", "").strip()
+    honeypot = request.form.get("website", "").strip()
+    rating_value = request.form.get("rating", "").strip()
+
+    if honeypot:
+        return False
+    if not name or len(name) > 100:
+        flash("Please enter your name (up to 100 characters).", "error")
+        return False
+    if email and (len(email) > 254 or "@" not in email):
+        flash("Please enter a valid email address or leave it blank.", "error")
+        return False
+    if not body or len(body) > 3000:
+        flash("Please write a message of up to 3,000 characters.", "error")
+        return False
+
+    rating = None
+    if kind == "review":
+        try:
+            rating = int(rating_value)
+        except (TypeError, ValueError):
+            rating = 0
+        if rating < 1 or rating > 5:
+            flash("Choose a rating from 1 to 5 stars.", "error")
+            return False
+
+    with DatabaseSession() as db:
+        db.add(
+            PublicSubmission(
+                kind=kind,
+                name=name,
+                email=email or None,
+                rating=rating,
+                body=body,
+                status="pending",
+                post_id=post_id,
+            )
+        )
+        db.commit()
+    flash("Thank you. Your submission is waiting for management approval.", "success")
+    return True
 
 
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.get("/journal")
+def journal():
+    page = max(request.args.get("page", default=1, type=int), 1)
+    per_page = 9
+    with DatabaseSession() as db:
+        query = db.query(ContentPost).filter_by(status="published")
+        total = query.count()
+        posts = (
+            query.order_by(desc(ContentPost.published_at), desc(ContentPost.id))
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
+    return render_template(
+        "journal.html",
+        posts=posts,
+        page=page,
+        has_next=page * per_page < total,
+        has_previous=page > 1,
+    )
+
+
+@app.route("/journal/<slug>", methods=["GET", "POST"])
+def journal_post(slug):
+    with DatabaseSession() as db:
+        post = db.query(ContentPost).filter_by(slug=slug, status="published").first()
+        if post is None:
+            abort(404)
+        if request.method == "POST":
+            save_public_submission("comment", post_id=post.id)
+            return redirect(url_for("journal_post", slug=post.slug) + "#comments")
+        comments = (
+            db.query(PublicSubmission)
+            .filter_by(post_id=post.id, kind="comment", status="approved")
+            .order_by(PublicSubmission.created_at.asc(), PublicSubmission.id.asc())
+            .all()
+        )
+        return render_template("journal_post.html", post=post, comments=comments)
+
+
+@app.route("/community", methods=["GET", "POST"])
+def community():
+    if request.method == "POST":
+        kind = request.form.get("kind", "")
+        if kind not in {"review", "comment"}:
+            flash("Choose a review or comment before submitting.", "error")
+        else:
+            save_public_submission(kind)
+        return redirect(url_for("community") + "#share")
+
+    with DatabaseSession() as db:
+        reviews = (
+            db.query(PublicSubmission)
+            .filter_by(kind="review", status="approved")
+            .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
+            .all()
+        )
+        comments = (
+            db.query(PublicSubmission)
+            .filter_by(kind="comment", status="approved", post_id=None)
+            .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
+            .limit(30)
+            .all()
+        )
+    return render_template("community.html", reviews=reviews, comments=comments)
 
 
 @app.post("/api/ai-chat")
@@ -510,6 +692,148 @@ def reopen_conversation(token):
         conversation.updated_at = datetime.utcnow()
         db.commit()
     return redirect(url_for("admin_conversation", token=token))
+
+
+@app.get("/admin/content")
+@login_required
+def admin_content():
+    edit_id = request.args.get("edit", type=int)
+    with DatabaseSession() as db:
+        posts = (
+            db.query(ContentPost)
+            .order_by(desc(ContentPost.updated_at), desc(ContentPost.id))
+            .all()
+        )
+        editing_post = db.query(ContentPost).filter_by(id=edit_id).first() if edit_id else None
+        if edit_id and editing_post is None:
+            abort(404)
+        return render_template(
+            "admin_content.html",
+            posts=posts,
+            editing_post=editing_post,
+            content_types=CONTENT_TYPES,
+        )
+
+
+@app.post("/admin/content/save")
+@login_required
+def admin_content_save():
+    post_id = request.form.get("post_id", type=int)
+    title = request.form.get("title", "").strip()
+    slug = make_slug(request.form.get("slug", "").strip() or title)
+    content_type = request.form.get("content_type", "article")
+    summary = request.form.get("summary", "").strip()
+    body = request.form.get("body", "").strip()
+    image_url = request.form.get("cover_image_url", "").strip()
+    status = request.form.get("status", "draft")
+
+    if not title or len(title) > 180 or not slug or len(slug) > 200:
+        flash("Add a title and a URL-friendly slug.", "error")
+        return redirect(url_for("admin_content", edit=post_id) if post_id else url_for("admin_content"))
+    if content_type not in CONTENT_TYPES or status not in {"draft", "published"}:
+        abort(400)
+    if len(summary) > 400 or not body or len(body) > 30000:
+        flash("Keep the summary under 400 characters and the article under 30,000 characters.", "error")
+        return redirect(url_for("admin_content", edit=post_id) if post_id else url_for("admin_content"))
+    if image_url:
+        parsed_image_url = urlsplit(image_url)
+        if parsed_image_url.scheme not in {"http", "https"} or not parsed_image_url.netloc:
+            flash("Cover image must be a full http:// or https:// URL.", "error")
+            return redirect(url_for("admin_content", edit=post_id) if post_id else url_for("admin_content"))
+
+    with DatabaseSession() as db:
+        post = db.query(ContentPost).filter_by(id=post_id).first() if post_id else ContentPost()
+        if post_id and post is None:
+            abort(404)
+        duplicate = db.query(ContentPost).filter_by(slug=slug).first()
+        if duplicate is not None and duplicate.id != post_id:
+            flash("That URL slug is already in use. Choose another one.", "error")
+            return redirect(url_for("admin_content", edit=post_id) if post_id else url_for("admin_content"))
+
+        was_published = post.status == "published"
+        post.title = title
+        post.slug = slug
+        post.content_type = content_type
+        post.summary = summary
+        post.body = body
+        post.cover_image_url = image_url or None
+        post.status = status
+        post.updated_at = datetime.utcnow()
+        if status == "published":
+            if not was_published or post.published_at is None:
+                post.published_at = datetime.utcnow()
+        else:
+            post.published_at = None
+        db.add(post)
+        db.commit()
+    flash("Content saved.", "success")
+    return redirect(url_for("admin_content", edit=post.id))
+
+
+@app.post("/admin/content/<int:post_id>/delete")
+@login_required
+def admin_content_delete(post_id):
+    with DatabaseSession() as db:
+        post = db.query(ContentPost).filter_by(id=post_id).first()
+        if post is None:
+            abort(404)
+        db.query(PublicSubmission).filter_by(post_id=post.id).update(
+            {PublicSubmission.post_id: None},
+            synchronize_session=False,
+        )
+        db.delete(post)
+        db.commit()
+    flash("Content deleted. Existing approved comments are kept in the community area.", "success")
+    return redirect(url_for("admin_content"))
+
+
+@app.get("/admin/submissions")
+@login_required
+def admin_submissions():
+    status_filter = request.args.get("status", "pending")
+    if status_filter not in {"pending", "approved", "all"}:
+        status_filter = "pending"
+    with DatabaseSession() as db:
+        query = db.query(PublicSubmission)
+        if status_filter != "all":
+            query = query.filter_by(status=status_filter)
+        submissions = query.order_by(
+            desc(PublicSubmission.created_at),
+            desc(PublicSubmission.id),
+        ).all()
+        pending_count = db.query(PublicSubmission).filter_by(status="pending").count()
+        return render_template(
+            "admin_submissions.html",
+            submissions=submissions,
+            status_filter=status_filter,
+            pending_count=pending_count,
+        )
+
+
+@app.post("/admin/submissions/<int:submission_id>/approve")
+@login_required
+def admin_submission_approve(submission_id):
+    with DatabaseSession() as db:
+        submission = db.query(PublicSubmission).filter_by(id=submission_id).first()
+        if submission is None:
+            abort(404)
+        submission.status = "approved"
+        db.commit()
+    flash("Submission approved and visible on the website.", "success")
+    return redirect(url_for("admin_submissions"))
+
+
+@app.post("/admin/submissions/<int:submission_id>/delete")
+@login_required
+def admin_submission_delete(submission_id):
+    with DatabaseSession() as db:
+        submission = db.query(PublicSubmission).filter_by(id=submission_id).first()
+        if submission is None:
+            abort(404)
+        db.delete(submission)
+        db.commit()
+    flash("Submission deleted.", "success")
+    return redirect(url_for("admin_submissions"))
 
 
 @app.errorhandler(400)

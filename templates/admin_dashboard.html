@@ -15,6 +15,11 @@
       <img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="STANDOUT Building & Construction">
       <span>Management inbox</span>
     </a>
+    <nav class="admin-tools" aria-label="Admin pages">
+      <a class="current" href="/admin">Inbox</a>
+      <a href="/admin/content">Content</a>
+      <a href="/admin/submissions">Reviews &amp; comments</a>
+    </nav>
     <div class="admin-header-right"><a href="/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3"/><path d="M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6"/></svg>View website</a><a href="/admin/logout" aria-label="Sign out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg>Sign out</a></div>
   </header>
   <main class="admin-app">

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#252a30">
+  <title>{{ post.title }} | STANDOUT B&amp;C</title>
+  <meta name="description" content="{{ post.summary or post.title }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="public-page">
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="STANDOUT Building and Construction home"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="STANDOUT Building & Construction"></a>
+    <nav class="site-nav public-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/journal" aria-current="page">Journal</a><a href="/community">Reviews &amp; comments</a><a class="button" href="/#contact">Discuss your project</a></nav>
+  </header>
+  <main class="article-main">
+    <nav class="article-breadcrumb" aria-label="Breadcrumb"><a href="/journal">Journal</a><span>/</span><span>{{ post.content_type|replace('_', ' ') }}</span></nav>
+    <article class="article-body">
+      <header class="article-heading">
+        <span class="eyebrow">{{ post.content_type|replace('_', ' ') }}{% if post.published_at %} · {{ post.published_at.strftime('%d %B %Y') }}{% endif %}</span>
+        <h1 class="display">{{ post.title }}</h1>
+        {% if post.summary %}<p class="article-summary">{{ post.summary }}</p>{% endif %}
+      </header>
+      {% if post.cover_image_url %}<img class="article-cover" src="{{ post.cover_image_url }}" alt="" fetchpriority="high">{% endif %}
+      <div class="article-copy">{{ post.body }}</div>
+    </article>
+    <section class="article-comments" id="comments">
+      <div class="section-heading"><div><span class="eyebrow">Join the conversation</span><h2 class="display">Comments <span>({{ comments|length }})</span></h2></div></div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for category, message in messages %}<p class="flash-message {{ category }}" role="status">{{ message }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      {% if comments %}
+        <div class="public-comment-list">
+          {% for comment in comments %}<article class="public-comment"><div><strong>{{ comment.name }}</strong><time>{{ comment.created_at.strftime('%d %b %Y') }}</time></div><p>{{ comment.body }}</p></article>{% endfor %}
+        </div>
+      {% else %}
+        <p class="muted-copy">No comments yet. Be the first to share a thoughtful response.</p>
+      {% endif %}
+      <form class="public-form" method="post" action="{{ url_for('journal_post', slug=post.slug) }}#comments">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="honeypot" aria-hidden="true"><label for="article-website">Leave this field empty</label><input id="article-website" name="website" tabindex="-1" autocomplete="off"></div>
+        <h3 class="display">Leave a comment</h3>
+        <div class="field"><label for="comment-name">Your name</label><input id="comment-name" name="name" required maxlength="100" autocomplete="name"></div>
+        <div class="field"><label for="comment-email">Email <span>(optional, not published)</span></label><input id="comment-email" name="email" type="email" maxlength="254" autocomplete="email"></div>
+        <div class="field"><label for="comment-body">Comment</label><textarea id="comment-body" name="body" rows="5" required maxlength="3000"></textarea></div>
+        <button class="button button-dark" type="submit">Submit comment</button>
+        <small>Comments are reviewed by the team before they appear on the site.</small>
+      </form>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="" loading="lazy"><span>Building with confidence in Nairobi.</span></div><div class="footer-links"><a href="/">Home</a><a href="/journal">Journal</a><a href="/community">Reviews &amp; comments</a><a href="/#contact">Contact</a><span>© STANDOUT B&amp;C</span></div></div></footer>
+</body>
+</html>
