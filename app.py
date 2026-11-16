@@ -61,18 +61,10 @@ def build_database_url():
         if configured_url.startswith("postgres://"):
             configured_url = configured_url.replace("postgres://", "postgresql://", 1)
         if configured_url.startswith("postgresql://"):
-            # Key change: switch to psycopg (version 3) driver
             configured_url = configured_url.replace(
-                "postgresql://",
-                "postgresql+psycopg://",
-                1,
+                "postgresql://", "postgresql+psycopg://", 1
             )
-        if "sslmode=" not in configured_url:
-            separator = "&" if "?" in configured_url else "?"
-            configured_url += f"{separator}sslmode=require"
         return configured_url
-    
-
     database_path = os.environ.get(
         "DATABASE_PATH",
         os.path.join(app.instance_path, "standout.db"),
@@ -82,16 +74,29 @@ def build_database_url():
 
 
 database_url = build_database_url()
-
-engine_options = {
-    "poolclass": NullPool,
-}
-
+engine_options = {"poolclass": NullPool}
 if database_url.startswith("sqlite:"):
     engine_options["connect_args"] = {"check_same_thread": False}
 
-engine = create_engine(database_url, **engine_options)
-DatabaseSession = sessionmaker(bind=engine, expire_on_commit=False)
+engine = None
+DatabaseSession = None
+DATABASE_AVAILABLE = False
+
+try:
+    engine = create_engine(database_url, **engine_options)
+    DatabaseSession = sessionmaker(bind=engine, expire_on_commit=False)
+    # Try to create tables to verify the connection
+    Base.metadata.create_all(engine)
+    DATABASE_AVAILABLE = True
+    app.logger.info("Database connection established successfully.")
+except Exception as exc:
+    # Catch all exceptions (including OperationalError for SSL issues)
+    # so the app can still boot without a database.
+    DATABASE_AVAILABLE = False
+    engine = None
+    DatabaseSession = None
+    app.logger.warning("Database unavailable: %s", exc)
+    print("WARNING: Database unavailable. Public pages will work, but chat/admin features will be disabled.")
 
 
 class Conversation(Base):
@@ -169,8 +174,6 @@ class PublicSubmission(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
 
-Base.metadata.create_all(engine)
-
 CONTENT_TYPES = {
     "blog": "Blog post",
     "article": "Article",
@@ -236,7 +239,6 @@ def message_json(message):
 
 
 def company_chat_fallback(text):
-    """A company-specific response keeps the chat useful before a Cohere key is added."""
     question = text.lower()
     if any(word in question for word in ("where", "location", "address", "office", "visit")):
         return (
@@ -346,28 +348,40 @@ def cohere_reply(message, history):
         raise RuntimeError("The AI assistant could not prepare a response. Please message management.") from error
 
 
+def db_unavailable_response():
+    return jsonify({
+        "error": "The management inbox is temporarily unavailable. Please call 0731 157 929 or use WhatsApp to reach our team."
+    }), 503
+
+
 @app.get("/")
 def home():
-    with DatabaseSession() as db:
-        recent_posts = (
-            db.query(ContentPost)
-            .filter_by(status="published")
-            .order_by(desc(ContentPost.published_at), desc(ContentPost.id))
-            .limit(3)
-            .all()
-        )
-        recent_reviews = (
-            db.query(PublicSubmission)
-            .filter_by(kind="review", status="approved")
-            .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
-            .limit(3)
-            .all()
-        )
-        return render_template(
-            "index.html",
-            recent_posts=recent_posts,
-            recent_reviews=recent_reviews,
-        )
+    recent_posts = []
+    recent_reviews = []
+    if DATABASE_AVAILABLE and DatabaseSession:
+        try:
+            with DatabaseSession() as db:
+                recent_posts = (
+                    db.query(ContentPost)
+                    .filter_by(status="published")
+                    .order_by(desc(ContentPost.published_at), desc(ContentPost.id))
+                    .limit(3)
+                    .all()
+                )
+                recent_reviews = (
+                    db.query(PublicSubmission)
+                    .filter_by(kind="review", status="approved")
+                    .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
+                    .limit(3)
+                    .all()
+                )
+        except Exception as exc:
+            app.logger.warning("Home page DB query failed: %s", exc)
+    return render_template(
+        "index.html",
+        recent_posts=recent_posts,
+        recent_reviews=recent_reviews,
+    )
 
 
 def make_slug(value):
@@ -376,6 +390,9 @@ def make_slug(value):
 
 
 def save_public_submission(kind, post_id=None):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Submissions are temporarily unavailable. Please call 0731 157 929.", "error")
+        return False
     name = request.form.get("name", "").strip()
     email = request.form.get("email", "").strip()
     body = request.form.get("body", "").strip()
@@ -404,41 +421,52 @@ def save_public_submission(kind, post_id=None):
             flash("Choose a rating from 1 to 5 stars.", "error")
             return False
 
-    with DatabaseSession() as db:
-        db.add(
-            PublicSubmission(
-                kind=kind,
-                name=name,
-                email=email or None,
-                rating=rating,
-                body=body,
-                status="pending",
-                post_id=post_id,
+    try:
+        with DatabaseSession() as db:
+            db.add(
+                PublicSubmission(
+                    kind=kind,
+                    name=name,
+                    email=email or None,
+                    rating=rating,
+                    body=body,
+                    status="pending",
+                    post_id=post_id,
+                )
             )
-        )
-        db.commit()
-    flash("Thank you. Your submission is waiting for management approval.", "success")
-    return True
+            db.commit()
+        flash("Thank you. Your submission is waiting for management approval.", "success")
+        return True
+    except Exception as exc:
+        app.logger.warning("Submission DB error: %s", exc)
+        flash("Submissions are temporarily unavailable. Please call 0731 157 929.", "error")
+        return False
 
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "database": DATABASE_AVAILABLE})
 
 
 @app.get("/journal")
 def journal():
     page = max(request.args.get("page", default=1, type=int), 1)
     per_page = 9
-    with DatabaseSession() as db:
-        query = db.query(ContentPost).filter_by(status="published")
-        total = query.count()
-        posts = (
-            query.order_by(desc(ContentPost.published_at), desc(ContentPost.id))
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-            .all()
-        )
+    posts = []
+    total = 0
+    if DATABASE_AVAILABLE and DatabaseSession:
+        try:
+            with DatabaseSession() as db:
+                query = db.query(ContentPost).filter_by(status="published")
+                total = query.count()
+                posts = (
+                    query.order_by(desc(ContentPost.published_at), desc(ContentPost.id))
+                    .offset((page - 1) * per_page)
+                    .limit(per_page)
+                    .all()
+                )
+        except Exception as exc:
+            app.logger.warning("Journal DB error: %s", exc)
     return render_template(
         "journal.html",
         posts=posts,
@@ -450,6 +478,8 @@ def journal():
 
 @app.route("/journal/<slug>", methods=["GET", "POST"])
 def journal_post(slug):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        abort(404)
     with DatabaseSession() as db:
         post = db.query(ContentPost).filter_by(slug=slug, status="published").first()
         if post is None:
@@ -476,20 +506,26 @@ def community():
             save_public_submission(kind)
         return redirect(url_for("community") + "#share")
 
-    with DatabaseSession() as db:
-        reviews = (
-            db.query(PublicSubmission)
-            .filter_by(kind="review", status="approved")
-            .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
-            .all()
-        )
-        comments = (
-            db.query(PublicSubmission)
-            .filter_by(kind="comment", status="approved", post_id=None)
-            .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
-            .limit(30)
-            .all()
-        )
+    reviews = []
+    comments = []
+    if DATABASE_AVAILABLE and DatabaseSession:
+        try:
+            with DatabaseSession() as db:
+                reviews = (
+                    db.query(PublicSubmission)
+                    .filter_by(kind="review", status="approved")
+                    .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
+                    .all()
+                )
+                comments = (
+                    db.query(PublicSubmission)
+                    .filter_by(kind="comment", status="approved", post_id=None)
+                    .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
+                    .limit(30)
+                    .all()
+                )
+        except Exception as exc:
+            app.logger.warning("Community DB error: %s", exc)
     return render_template("community.html", reviews=reviews, comments=comments)
 
 
@@ -512,6 +548,8 @@ def ai_chat():
 
 @app.post("/api/management/conversations")
 def start_management_conversation():
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        return db_unavailable_response()
     data = request.get_json(silent=True) or {}
     name = data.get("name")
     email = data.get("email", "")
@@ -524,73 +562,89 @@ def start_management_conversation():
     if not isinstance(email, str) or len(email) > 254 or not isinstance(phone, str) or len(phone) > 40:
         return jsonify({"error": "Please check your contact details."}), 400
 
-    with DatabaseSession() as db:
-        conversation = Conversation(
-            token=secrets.token_urlsafe(32),
-            name=name.strip(),
-            email=email.strip() or None,
-            phone=phone.strip() or None,
-        )
-        conversation.messages.append(
-            Message(sender="visitor", body=body.strip(), is_read_by_admin=False)
-        )
-        db.add(conversation)
-        db.commit()
-        return jsonify(
-            {
-                "token": conversation.token,
-                "messages": [message_json(conversation.messages[0])],
-                "status": conversation.status,
-            }
-        ), 201
+    try:
+        with DatabaseSession() as db:
+            conversation = Conversation(
+                token=secrets.token_urlsafe(32),
+                name=name.strip(),
+                email=email.strip() or None,
+                phone=phone.strip() or None,
+            )
+            conversation.messages.append(
+                Message(sender="visitor", body=body.strip(), is_read_by_admin=False)
+            )
+            db.add(conversation)
+            db.commit()
+            return jsonify(
+                {
+                    "token": conversation.token,
+                    "messages": [message_json(conversation.messages[0])],
+                    "status": conversation.status,
+                }
+            ), 201
+    except Exception as exc:
+        app.logger.warning("Start conversation error: %s", exc)
+        return db_unavailable_response()
 
 
 @app.get("/api/management/conversations/<token>")
 def get_management_conversation(token):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        return db_unavailable_response()
     after = request.args.get("after", default=0, type=int)
-    with DatabaseSession() as db:
-        conversation = db.query(Conversation).filter_by(token=token).first()
-        if conversation is None:
-            return jsonify({"error": "This conversation could not be found."}), 404
-        messages = (
-            db.query(Message)
-            .filter(
-                Message.conversation_id == conversation.id,
-                Message.id > max(after, 0),
+    try:
+        with DatabaseSession() as db:
+            conversation = db.query(Conversation).filter_by(token=token).first()
+            if conversation is None:
+                return jsonify({"error": "This conversation could not be found."}), 404
+            messages = (
+                db.query(Message)
+                .filter(
+                    Message.conversation_id == conversation.id,
+                    Message.id > max(after, 0),
+                )
+                .order_by(Message.id.asc())
+                .all()
             )
-            .order_by(Message.id.asc())
-            .all()
-        )
-        return jsonify(
-            {
-                "conversation_id": conversation.token,
-                "messages": [message_json(message) for message in messages],
-                "status": conversation.status,
-            }
-        )
+            return jsonify(
+                {
+                    "conversation_id": conversation.token,
+                    "messages": [message_json(message) for message in messages],
+                    "status": conversation.status,
+                }
+            )
+    except Exception as exc:
+        app.logger.warning("Get conversation error: %s", exc)
+        return db_unavailable_response()
 
 
 @app.post("/api/management/conversations/<token>/messages")
 def send_management_message(token):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        return db_unavailable_response()
     data = request.get_json(silent=True) or {}
     body = data.get("message")
     if not isinstance(body, str) or not body.strip() or len(body.strip()) > 3000:
         return jsonify({"error": "Please enter a message under 3,000 characters."}), 400
-    with DatabaseSession() as db:
-        conversation = db.query(Conversation).filter_by(token=token).first()
-        if conversation is None:
-            return jsonify({"error": "This conversation could not be found."}), 404
-        conversation.status = "open"
-        conversation.updated_at = datetime.utcnow()
-        message = Message(
-            conversation=conversation,
-            sender="visitor",
-            body=body.strip(),
-            is_read_by_admin=False,
-        )
-        db.add(message)
-        db.commit()
-        return jsonify({"message": message_json(message), "status": conversation.status}), 201
+    try:
+        with DatabaseSession() as db:
+            conversation = db.query(Conversation).filter_by(token=token).first()
+            if conversation is None:
+                return jsonify({"error": "This conversation could not be found."}), 404
+            conversation.status = "open"
+            conversation.updated_at = datetime.utcnow()
+            message = Message(
+                conversation=conversation,
+                sender="visitor",
+                body=body.strip(),
+                is_read_by_admin=False,
+            )
+            db.add(message)
+            db.commit()
+            return jsonify({"message": message_json(message), "status": conversation.status}), 201
+    except Exception as exc:
+        app.logger.warning("Send message error: %s", exc)
+        return db_unavailable_response()
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
@@ -627,115 +681,166 @@ def admin_logout():
 @app.get("/admin")
 @login_required
 def admin_dashboard():
-    with DatabaseSession() as db:
-        conversations = (
-            db.query(Conversation)
-            .order_by(desc(Conversation.updated_at), desc(Conversation.id))
-            .all()
-        )
-        return render_template(
-            "admin_dashboard.html",
-            conversations=conversations,
-            selected_conversation=None,
-            selected_messages=[],
-        )
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The management inbox is temporarily unavailable.", "error")
+        return render_template("admin_dashboard.html", conversations=[], selected_conversation=None, selected_messages=[])
+    try:
+        with DatabaseSession() as db:
+            conversations = (
+                db.query(Conversation)
+                .order_by(desc(Conversation.updated_at), desc(Conversation.id))
+                .all()
+            )
+            return render_template(
+                "admin_dashboard.html",
+                conversations=conversations,
+                selected_conversation=None,
+                selected_messages=[],
+            )
+    except Exception as exc:
+        app.logger.warning("Admin dashboard error: %s", exc)
+        flash("The management inbox is temporarily unavailable.", "error")
+        return render_template("admin_dashboard.html", conversations=[], selected_conversation=None, selected_messages=[])
 
 
 @app.get("/admin/conversations/<token>")
 @login_required
 def admin_conversation(token):
-    with DatabaseSession() as db:
-        conversations = (
-            db.query(Conversation)
-            .order_by(desc(Conversation.updated_at), desc(Conversation.id))
-            .all()
-        )
-        selected = next((item for item in conversations if item.token == token), None)
-        if selected is None:
-            abort(404)
-        selected.messages
-        return render_template(
-            "admin_dashboard.html",
-            conversations=conversations,
-            selected_conversation=selected,
-            selected_messages=selected.messages,
-        )
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
+    try:
+        with DatabaseSession() as db:
+            conversations = (
+                db.query(Conversation)
+                .order_by(desc(Conversation.updated_at), desc(Conversation.id))
+                .all()
+            )
+            selected = next((item for item in conversations if item.token == token), None)
+            if selected is None:
+                abort(404)
+            selected.messages
+            return render_template(
+                "admin_dashboard.html",
+                conversations=conversations,
+                selected_conversation=selected,
+                selected_messages=selected.messages,
+            )
+    except Exception as exc:
+        app.logger.warning("Admin conversation error: %s", exc)
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
 
 
 @app.post("/admin/conversations/<token>/reply")
 @login_required
 def admin_reply(token):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
     body = request.form.get("message", "")
     if not body.strip() or len(body.strip()) > 3000:
         flash("Write a reply under 3,000 characters.", "error")
         return redirect(url_for("admin_conversation", token=token))
-    with DatabaseSession() as db:
-        conversation = db.query(Conversation).filter_by(token=token).first()
-        if conversation is None:
-            abort(404)
-        conversation.updated_at = datetime.utcnow()
-        db.add(
-            Message(
-                conversation=conversation,
-                sender="admin",
-                body=body.strip(),
-                is_read_by_admin=True,
+    try:
+        with DatabaseSession() as db:
+            conversation = db.query(Conversation).filter_by(token=token).first()
+            if conversation is None:
+                abort(404)
+            conversation.updated_at = datetime.utcnow()
+            db.add(
+                Message(
+                    conversation=conversation,
+                    sender="admin",
+                    body=body.strip(),
+                    is_read_by_admin=True,
+                )
             )
-        )
-        db.commit()
+            db.commit()
+    except Exception as exc:
+        app.logger.warning("Admin reply error: %s", exc)
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
     return redirect(url_for("admin_conversation", token=token))
 
 
 @app.post("/admin/conversations/<token>/resolve")
 @login_required
 def resolve_conversation(token):
-    with DatabaseSession() as db:
-        conversation = db.query(Conversation).filter_by(token=token).first()
-        if conversation is None:
-            abort(404)
-        conversation.status = "resolved"
-        conversation.updated_at = datetime.utcnow()
-        db.commit()
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
+    try:
+        with DatabaseSession() as db:
+            conversation = db.query(Conversation).filter_by(token=token).first()
+            if conversation is None:
+                abort(404)
+            conversation.status = "resolved"
+            conversation.updated_at = datetime.utcnow()
+            db.commit()
+    except Exception as exc:
+        app.logger.warning("Resolve conversation error: %s", exc)
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
     return redirect(url_for("admin_conversation", token=token))
 
 
 @app.post("/admin/conversations/<token>/reopen")
 @login_required
 def reopen_conversation(token):
-    with DatabaseSession() as db:
-        conversation = db.query(Conversation).filter_by(token=token).first()
-        if conversation is None:
-            abort(404)
-        conversation.status = "open"
-        conversation.updated_at = datetime.utcnow()
-        db.commit()
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
+    try:
+        with DatabaseSession() as db:
+            conversation = db.query(Conversation).filter_by(token=token).first()
+            if conversation is None:
+                abort(404)
+            conversation.status = "open"
+            conversation.updated_at = datetime.utcnow()
+            db.commit()
+    except Exception as exc:
+        app.logger.warning("Reopen conversation error: %s", exc)
+        flash("The management inbox is temporarily unavailable.", "error")
+        return redirect(url_for("admin_dashboard"))
     return redirect(url_for("admin_conversation", token=token))
 
 
 @app.get("/admin/content")
 @login_required
 def admin_content():
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The content manager is temporarily unavailable.", "error")
+        return render_template("admin_content.html", posts=[], editing_post=None, content_types=CONTENT_TYPES)
     edit_id = request.args.get("edit", type=int)
-    with DatabaseSession() as db:
-        posts = (
-            db.query(ContentPost)
-            .order_by(desc(ContentPost.updated_at), desc(ContentPost.id))
-            .all()
-        )
-        editing_post = db.query(ContentPost).filter_by(id=edit_id).first() if edit_id else None
-        if edit_id and editing_post is None:
-            abort(404)
-        return render_template(
-            "admin_content.html",
-            posts=posts,
-            editing_post=editing_post,
-            content_types=CONTENT_TYPES,
-        )
+    try:
+        with DatabaseSession() as db:
+            posts = (
+                db.query(ContentPost)
+                .order_by(desc(ContentPost.updated_at), desc(ContentPost.id))
+                .all()
+            )
+            editing_post = db.query(ContentPost).filter_by(id=edit_id).first() if edit_id else None
+            if edit_id and editing_post is None:
+                abort(404)
+            return render_template(
+                "admin_content.html",
+                posts=posts,
+                editing_post=editing_post,
+                content_types=CONTENT_TYPES,
+            )
+    except Exception as exc:
+        app.logger.warning("Admin content error: %s", exc)
+        flash("The content manager is temporarily unavailable.", "error")
+        return render_template("admin_content.html", posts=[], editing_post=None, content_types=CONTENT_TYPES)
 
 
 @app.post("/admin/content/save")
 @login_required
 def admin_content_save():
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The content manager is temporarily unavailable.", "error")
+        return redirect(url_for("admin_content"))
     post_id = request.form.get("post_id", type=int)
     title = request.form.get("title", "").strip()
     slug = make_slug(request.form.get("slug", "").strip() or title)
@@ -759,98 +864,132 @@ def admin_content_save():
             flash("Cover image must be a full http:// or https:// URL.", "error")
             return redirect(url_for("admin_content", edit=post_id) if post_id else url_for("admin_content"))
 
-    with DatabaseSession() as db:
-        post = db.query(ContentPost).filter_by(id=post_id).first() if post_id else ContentPost()
-        if post_id and post is None:
-            abort(404)
-        duplicate = db.query(ContentPost).filter_by(slug=slug).first()
-        if duplicate is not None and duplicate.id != post_id:
-            flash("That URL slug is already in use. Choose another one.", "error")
-            return redirect(url_for("admin_content", edit=post_id) if post_id else url_for("admin_content"))
+    try:
+        with DatabaseSession() as db:
+            post = db.query(ContentPost).filter_by(id=post_id).first() if post_id else ContentPost()
+            if post_id and post is None:
+                abort(404)
+            duplicate = db.query(ContentPost).filter_by(slug=slug).first()
+            if duplicate is not None and duplicate.id != post_id:
+                flash("That URL slug is already in use. Choose another one.", "error")
+                return redirect(url_for("admin_content", edit=post_id) if post_id else url_for("admin_content"))
 
-        was_published = post.status == "published"
-        post.title = title
-        post.slug = slug
-        post.content_type = content_type
-        post.summary = summary
-        post.body = body
-        post.cover_image_url = image_url or None
-        post.status = status
-        post.updated_at = datetime.utcnow()
-        if status == "published":
-            if not was_published or post.published_at is None:
-                post.published_at = datetime.utcnow()
-        else:
-            post.published_at = None
-        db.add(post)
-        db.commit()
-    flash("Content saved.", "success")
-    return redirect(url_for("admin_content", edit=post.id))
+            was_published = post.status == "published"
+            post.title = title
+            post.slug = slug
+            post.content_type = content_type
+            post.summary = summary
+            post.body = body
+            post.cover_image_url = image_url or None
+            post.status = status
+            post.updated_at = datetime.utcnow()
+            if status == "published":
+                if not was_published or post.published_at is None:
+                    post.published_at = datetime.utcnow()
+            else:
+                post.published_at = None
+            db.add(post)
+            db.commit()
+        flash("Content saved.", "success")
+        return redirect(url_for("admin_content", edit=post.id))
+    except Exception as exc:
+        app.logger.warning("Save content error: %s", exc)
+        flash("The content manager is temporarily unavailable.", "error")
+        return redirect(url_for("admin_content"))
 
 
 @app.post("/admin/content/<int:post_id>/delete")
 @login_required
 def admin_content_delete(post_id):
-    with DatabaseSession() as db:
-        post = db.query(ContentPost).filter_by(id=post_id).first()
-        if post is None:
-            abort(404)
-        db.query(PublicSubmission).filter_by(post_id=post.id).update(
-            {PublicSubmission.post_id: None},
-            synchronize_session=False,
-        )
-        db.delete(post)
-        db.commit()
-    flash("Content deleted. Existing approved comments are kept in the community area.", "success")
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("The content manager is temporarily unavailable.", "error")
+        return redirect(url_for("admin_content"))
+    try:
+        with DatabaseSession() as db:
+            post = db.query(ContentPost).filter_by(id=post_id).first()
+            if post is None:
+                abort(404)
+            db.query(PublicSubmission).filter_by(post_id=post.id).update(
+                {PublicSubmission.post_id: None},
+                synchronize_session=False,
+            )
+            db.delete(post)
+            db.commit()
+        flash("Content deleted. Existing approved comments are kept in the community area.", "success")
+    except Exception as exc:
+        app.logger.warning("Delete content error: %s", exc)
+        flash("The content manager is temporarily unavailable.", "error")
     return redirect(url_for("admin_content"))
 
 
 @app.get("/admin/submissions")
 @login_required
 def admin_submissions():
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Submissions are temporarily unavailable.", "error")
+        return render_template("admin_submissions.html", submissions=[], status_filter="pending", pending_count=0)
     status_filter = request.args.get("status", "pending")
     if status_filter not in {"pending", "approved", "all"}:
         status_filter = "pending"
-    with DatabaseSession() as db:
-        query = db.query(PublicSubmission)
-        if status_filter != "all":
-            query = query.filter_by(status=status_filter)
-        submissions = query.order_by(
-            desc(PublicSubmission.created_at),
-            desc(PublicSubmission.id),
-        ).all()
-        pending_count = db.query(PublicSubmission).filter_by(status="pending").count()
-        return render_template(
-            "admin_submissions.html",
-            submissions=submissions,
-            status_filter=status_filter,
-            pending_count=pending_count,
-        )
+    try:
+        with DatabaseSession() as db:
+            query = db.query(PublicSubmission)
+            if status_filter != "all":
+                query = query.filter_by(status=status_filter)
+            submissions = query.order_by(
+                desc(PublicSubmission.created_at),
+                desc(PublicSubmission.id),
+            ).all()
+            pending_count = db.query(PublicSubmission).filter_by(status="pending").count()
+            return render_template(
+                "admin_submissions.html",
+                submissions=submissions,
+                status_filter=status_filter,
+                pending_count=pending_count,
+            )
+    except Exception as exc:
+        app.logger.warning("Admin submissions error: %s", exc)
+        flash("Submissions are temporarily unavailable.", "error")
+        return render_template("admin_submissions.html", submissions=[], status_filter="pending", pending_count=0)
 
 
 @app.post("/admin/submissions/<int:submission_id>/approve")
 @login_required
 def admin_submission_approve(submission_id):
-    with DatabaseSession() as db:
-        submission = db.query(PublicSubmission).filter_by(id=submission_id).first()
-        if submission is None:
-            abort(404)
-        submission.status = "approved"
-        db.commit()
-    flash("Submission approved and visible on the website.", "success")
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Submissions are temporarily unavailable.", "error")
+        return redirect(url_for("admin_submissions"))
+    try:
+        with DatabaseSession() as db:
+            submission = db.query(PublicSubmission).filter_by(id=submission_id).first()
+            if submission is None:
+                abort(404)
+            submission.status = "approved"
+            db.commit()
+        flash("Submission approved and visible on the website.", "success")
+    except Exception as exc:
+        app.logger.warning("Approve submission error: %s", exc)
+        flash("Submissions are temporarily unavailable.", "error")
     return redirect(url_for("admin_submissions"))
 
 
 @app.post("/admin/submissions/<int:submission_id>/delete")
 @login_required
 def admin_submission_delete(submission_id):
-    with DatabaseSession() as db:
-        submission = db.query(PublicSubmission).filter_by(id=submission_id).first()
-        if submission is None:
-            abort(404)
-        db.delete(submission)
-        db.commit()
-    flash("Submission deleted.", "success")
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Submissions are temporarily unavailable.", "error")
+        return redirect(url_for("admin_submissions"))
+    try:
+        with DatabaseSession() as db:
+            submission = db.query(PublicSubmission).filter_by(id=submission_id).first()
+            if submission is None:
+                abort(404)
+            db.delete(submission)
+            db.commit()
+        flash("Submission deleted.", "success")
+    except Exception as exc:
+        app.logger.warning("Delete submission error: %s", exc)
+        flash("Submissions are temporarily unavailable.", "error")
     return redirect(url_for("admin_submissions"))
 
 
