@@ -65,22 +65,21 @@ def build_database_url():
                 "postgresql+psycopg2://",
                 1,
             )
+        # Append SSL mode if not present
+        if "sslmode=" not in configured_url:
+            separator = "&" if "?" in configured_url else "?"
+            configured_url += f"{separator}sslmode=require"
         return configured_url
-
-    database_path = os.environ.get(
-        "DATABASE_PATH",
-        os.path.join(app.instance_path, "standout.db"),
-    )
-    os.makedirs(os.path.dirname(os.path.abspath(database_path)), exist_ok=True)
-    return f"sqlite:///{database_path}"
-
+    # ... rest of the SQLite fallback ...
 
 database_url = build_database_url()
-engine_options = {"pool_pre_ping": True}
+engine_options = {
+    "pool_pre_ping": True,
+    "pool_recycle": 60,
+}
 if database_url.startswith("sqlite:"):
     engine_options["connect_args"] = {"check_same_thread": False}
 engine = create_engine(database_url, **engine_options)
-DatabaseSession = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 class Conversation(Base):
