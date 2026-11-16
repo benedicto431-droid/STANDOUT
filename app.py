@@ -20,6 +20,7 @@ from flask import (
 )
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, create_engine, desc
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.pool import NullPool
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,21 +66,30 @@ def build_database_url():
                 "postgresql+psycopg2://",
                 1,
             )
-        # Append SSL mode if not present
         if "sslmode=" not in configured_url:
             separator = "&" if "?" in configured_url else "?"
             configured_url += f"{separator}sslmode=require"
         return configured_url
-    # ... rest of the SQLite fallback ...
+
+    database_path = os.environ.get(
+        "DATABASE_PATH",
+        os.path.join(app.instance_path, "standout.db"),
+    )
+    os.makedirs(os.path.dirname(os.path.abspath(database_path)), exist_ok=True)
+    return f"sqlite:///{database_path}"
+
 
 database_url = build_database_url()
+
 engine_options = {
-    "pool_pre_ping": True,
-    "pool_recycle": 60,
+    "poolclass": NullPool,
 }
+
 if database_url.startswith("sqlite:"):
     engine_options["connect_args"] = {"check_same_thread": False}
+
 engine = create_engine(database_url, **engine_options)
+DatabaseSession = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 class Conversation(Base):
@@ -231,12 +241,19 @@ def company_chat_fallback(text):
             "STANDOUT B&C is based at Park Plaza Building along Eastern Bypass in Utawala, Nairobi. "
             "Call 0731157929 if you would like to arrange a visit."
         )
-    if any(word in question for word in ("service", "build", "renovat", "roof", "concrete", "kitchen", "bathroom", "commercial", "home", "extension", "framing")):
+    if any(word in question for word in (
+        "service", "build", "renovat", "roof", "concrete", "kitchen", "bathroom",
+        "commercial", "home", "extension", "framing", "interior", "fitout", "tiling",
+        "paint", "gypsum", "cabinet", "door", "cladding", "subcontractor",
+        "architectural", "structural", "mazeras", "plumbing", "electrical", "ruff", "tuff"
+    )):
         return (
-            "We work on new homes and custom homes, commercial and light industrial construction, "
-            "renovations, extensions, kitchen and bathroom remodels, concrete and foundations, "
-            "roofing, framing, project management and design-build. Tell me a little about your "
-            "project, or use Chat with management for a direct reply."
+            "We offer a full range of construction and finishing services including: "
+            "Interior design, Interior fit-out, General construction, Tiling works, Paint works, "
+            "Gypsum work, Cabinet installation, Door installation, Timber cladding, Subcontracting, "
+            "Architectural design, Structural design, Mazeras installation, Roofing, Plumbing, "
+            "Electrical wiring, and Ruff n Tuff finishes. Tell me a little about your project, "
+            "or use Chat with management for a direct reply."
         )
     if any(word in question for word in ("quote", "cost", "price", "estimate", "budget")):
         return (
