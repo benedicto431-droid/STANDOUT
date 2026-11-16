@@ -2,6 +2,8 @@
   'use strict';
 
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  
+  // --- Navigation Toggle ---
   const navToggle = document.querySelector('.nav-toggle');
   const nav = document.querySelector('#site-nav');
   if (navToggle && nav) {
@@ -18,9 +20,45 @@
     }));
   }
 
+  // --- Hero Image Slider ---
+  const slides = document.querySelectorAll('.hero-slide');
+  const dots = document.querySelectorAll('.hero-slider-dots .dot');
+  let currentSlide = 0;
+  let slideInterval;
+
+  function showSlide(index) {
+    if (!slides.length) return;
+    slides.forEach((slide, i) => slide.classList.toggle('active', i === index));
+    dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
+    currentSlide = index;
+  }
+
+  function nextSlide() {
+    showSlide((currentSlide + 1) % slides.length);
+  }
+
+  function startSlider() {
+    if (slides.length > 1) {
+      slideInterval = setInterval(nextSlide, 4000); // Flashes every 4 seconds
+    }
+  }
+
+  if (dots.length > 0) {
+    dots.forEach((dot, index) => {
+      dot.addEventListener('click', () => {
+        clearInterval(slideInterval);
+        showSlide(index);
+        startSlider();
+      });
+    });
+    startSlider();
+  }
+
+  // --- Footer Year ---
   const year = document.querySelector('#current-year');
   if (year) year.textContent = new Date().getFullYear();
 
+  // --- Scroll Reveal Animations ---
   const revealItems = document.querySelectorAll('.reveal');
   if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     const observer = new IntersectionObserver(entries => entries.forEach(entry => {
@@ -34,6 +72,7 @@
     revealItems.forEach(item => item.classList.add('is-visible'));
   }
 
+  // --- Chat & Form Variables ---
   const contactForm = document.querySelector('#contact-form');
   const contactStatus = document.querySelector('#contact-status');
   const chatWindow = document.querySelector('#chat-window');
@@ -45,6 +84,7 @@
   const chatClose = document.querySelector('.chat-close');
   const chatHeading = document.querySelector('.chat-title strong');
   const chatSubheading = document.querySelector('.chat-title small');
+  
   let history = [];
   let conversationToken = null;
   try {
@@ -57,6 +97,7 @@
   let pollTimer = null;
   let sending = false;
 
+  // --- Chat UI Helpers ---
   function setManagementMode() {
     if (chatHeading) chatHeading.textContent = 'Chat with management';
     if (chatSubheading) chatSubheading.textContent = 'Your enquiry goes directly to the team';
@@ -71,8 +112,10 @@
     if (open) chatInput?.focus();
     else chatLauncher.focus();
   }
+
   chatLauncher?.addEventListener('click', () => setChatOpen(chatWindow.hidden));
   chatClose?.addEventListener('click', () => setChatOpen(false));
+  
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && chatWindow && !chatWindow.hidden) setChatOpen(false);
   });
@@ -86,6 +129,7 @@
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
+  // --- Chat Polling ---
   async function pollConversation() {
     if (!conversationToken) return;
     try {
@@ -107,18 +151,23 @@
         }
       });
       restoreConversationHistory = false;
-      if (data.status === 'resolved' && chatNotice) chatNotice.textContent = 'This enquiry has been marked resolved. Send a new enquiry through the form to get back in touch.';
-      else if (chatNotice && conversationToken) chatNotice.textContent = 'This chat is connected to your enquiry. Our team can reply here.';
+      if (data.status === 'resolved' && chatNotice) {
+        chatNotice.textContent = 'This enquiry has been marked resolved. Send a new enquiry through the form to get back in touch.';
+      } else if (chatNotice && conversationToken) {
+        chatNotice.textContent = 'This chat is connected to your enquiry. Our team can reply here.';
+      }
     } catch (_) {
       // A temporary polling failure should not interrupt the conversation.
     }
   }
+
   function startPolling() {
     if (pollTimer) window.clearInterval(pollTimer);
     pollConversation();
     pollTimer = window.setInterval(pollConversation, 12000);
   }
 
+  // --- Contact Form Submission ---
   contactForm?.addEventListener('submit', async event => {
     event.preventDefault();
     if (!contactForm.reportValidity()) return;
@@ -136,6 +185,7 @@
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || data.message || 'We couldn’t send your enquiry right now. Please try again.');
+      
       conversationToken = data.token;
       setManagementMode();
       try {
@@ -153,6 +203,7 @@
       contactStatus.className = 'form-status success';
       contactStatus.textContent = 'Your enquiry is with our team. We’ll follow up using the contact details you provided.';
       contactForm.reset();
+      
       if (conversationToken) {
         startPolling();
         setChatOpen(true);
@@ -167,6 +218,7 @@
     }
   });
 
+  // --- Chat Message Submission ---
   chatForm?.addEventListener('submit', async event => {
     event.preventDefault();
     const message = chatInput.value.trim();
@@ -175,6 +227,7 @@
     chatInput.value = '';
     chatInput.disabled = true;
     addBubble('user', message);
+    
     if (conversationToken) {
       try {
         const response = await fetch(`/api/management/conversations/${encodeURIComponent(conversationToken)}/messages`, {
