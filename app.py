@@ -61,15 +61,17 @@ def build_database_url():
         if configured_url.startswith("postgres://"):
             configured_url = configured_url.replace("postgres://", "postgresql://", 1)
         if configured_url.startswith("postgresql://"):
+            # Key change: switch to psycopg (version 3) driver
             configured_url = configured_url.replace(
                 "postgresql://",
-                "postgresql+psycopg2://",
+                "postgresql+psycopg://",
                 1,
             )
         if "sslmode=" not in configured_url:
             separator = "&" if "?" in configured_url else "?"
             configured_url += f"{separator}sslmode=require"
         return configured_url
+    
 
     database_path = os.environ.get(
         "DATABASE_PATH",
