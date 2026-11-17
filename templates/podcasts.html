@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Podcasts | {{ site_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <style>
+    :root { --orange: {{ primary_color }}; --ink: {{ accent_color }}; }
+  </style>
+</head>
+<body class="public-page">
+  <header class="site-header">
+    <a class="brand" href="/"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt="{{ site_name }}"></a>
+    <nav class="site-nav public-nav">
+      <a href="/">Home</a>
+      <a href="/journal">Journal</a>
+      <a href="/podcasts" aria-current="page">Podcasts</a>
+      <a href="/community">Reviews</a>
+    </nav>
+  </header>
+  <main class="editorial-main">
+    <section class="editorial-hero">
+      <span class="eyebrow">Listen in</span>
+      <h1 class="display">The {{ site_name }} podcast.</h1>
+      <p>Conversations about building, design and construction in Nairobi.</p>
+    </section>
+    <section class="editorial-content">
+      {% if podcasts %}
+        <div class="editorial-grid">
+          {% for pod in podcasts %}
+            <article class="editorial-card">
+              {% if pod.cover_image_url %}
+                <img src="{{ pod.cover_image_url }}" alt="" class="editorial-card-image" loading="lazy">
+              {% endif %}
+              <div class="editorial-card-content">
+                <div class="editorial-meta">
+                  <span>{% if pod.episode_number %}Episode {{ pod.episode_number }}{% else %}Podcast{% endif %}</span>
+                  <time>{{ pod.created_at.strftime('%d %b %Y') }}</time>
+                </div>
+                <h2>{{ pod.title }}</h2>
+                <p>{{ pod.description }}</p>
+                <audio controls preload="none" style="width:100%; margin-top:14px;">
+                  <source src="{{ pod.audio_url }}">
+                </audio>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="editorial-empty">
+          <h2 class="display">No episodes yet.</h2>
+          <p>Check back soon — new episodes are on the way.</p>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

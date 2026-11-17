@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Podcasts | Admin</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <a class="admin-brand" href="/admin"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt=""><span>Admin</span></a>
+    <nav class="admin-tools">
+      <a href="/admin">Inbox</a>
+      <a href="/admin/content">Content</a>
+      <a class="current" href="/admin/podcasts">Podcasts</a>
+      <a href="/admin/settings">Settings</a>
+      <a href="/admin/text">Page text</a>
+      <a href="/admin/submissions">Reviews &amp; comments</a>
+    </nav>
+    <div class="admin-header-right"><a href="/admin/logout">Sign out</a></div>
+  </header>
+  <main class="cms-layout">
+    <section class="cms-main">
+      <div class="cms-page-heading">
+        <div>
+          <span class="eyebrow">Audio content</span>
+          <h1 class="display">Podcasts</h1>
+          <p>Add and manage podcast episodes. Use a public URL for the audio file.</p>
+        </div>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for c, m in messages %}<p class="flash-message {{ c }}">{{ m }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <div class="cms-columns">
+        <section class="cms-editor">
+          <div class="cms-section-heading">
+            <div><span class="eyebrow">{{ 'Edit' if editing else 'New' }} podcast</span></div>
+          </div>
+          <form class="cms-form" method="post" action="/admin/podcasts/save">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if editing %}<input type="hidden" name="podcast_id" value="{{ editing.id }}">{% endif %}
+            <div class="field">
+              <label>Title</label>
+              <input name="title" required maxlength="200" value="{{ editing.title if editing else '' }}">
+            </div>
+            <div class="field">
+              <label>Description</label>
+              <textarea name="description" rows="4">{{ editing.description if editing else '' }}</textarea>
+            </div>
+            <div class="field">
+              <label>Audio URL (mp3, m4a, etc.)</label>
+              <input name="audio_url" type="url" required value="{{ editing.audio_url if editing else '' }}" placeholder="https://...">
+            </div>
+            <div class="field">
+              <label>Cover image URL (optional)</label>
+              <input name="cover_image_url" type="url" value="{{ editing.cover_image_url if editing and editing.cover_image_url else '' }}">
+            </div>
+            <div class="cms-form-row">
+              <div class="field">
+                <label>Episode number</label>
+                <input name="episode_number" type="number" min="1" value="{{ editing.episode_number if editing and editing.episode_number else '' }}">
+              </div>
+              <div class="field">
+                <label>Status</label>
+                <select name="status">
+                  <option value="published" {% if not editing or editing.status == 'published' %}selected{% endif %}>Published</option>
+                  <option value="draft" {% if editing and editing.status == 'draft' %}selected{% endif %}>Draft</option>
+                </select>
+              </div>
+            </div>
+            <div class="cms-form-actions">
+              <button class="button button-dark" type="submit">Save podcast</button>
+              {% if editing %}<a class="admin-button" href="/admin/podcasts">Cancel</a>{% endif %}
+            </div>
+          </form>
+        </section>
+        <section class="cms-library">
+          <div class="cms-section-heading"><div><span class="eyebrow">All episodes</span></div><span class="inbox-count">{{ podcasts|length }}</span></div>
+          {% if podcasts %}
+            <div class="cms-post-list">
+              {% for p in podcasts %}
+                <article class="cms-post-item">
+                  <div class="cms-post-meta"><span>{% if p.episode_number %}Ep. {{ p.episode_number }}{% else %}Podcast{% endif %}</span><span class="status-pill">{{ p.status }}</span></div>
+                  <h3>{{ p.title }}</h3>
+                  <p>{{ p.description[:120] }}{% if p.description|length > 120 %}…{% endif %}</p>
+                  <div class="cms-post-actions">
+                    <a class="admin-button" href="/admin/podcasts?edit={{ p.id }}">Edit</a>
+                    <form method="post" action="/admin/podcasts/{{ p.id }}/delete" data-confirm="Delete this podcast?">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="admin-button danger" type="submit">Delete</button>
+                    </form>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="cms-empty"><strong>No podcasts yet.</strong><p>Add your first episode using the form.</p></div>
+          {% endif %}
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

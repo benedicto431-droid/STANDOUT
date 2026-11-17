@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page text | Admin</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <a class="admin-brand" href="/admin"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt=""><span>Admin</span></a>
+    <nav class="admin-tools">
+      <a href="/admin">Inbox</a>
+      <a href="/admin/content">Content</a>
+      <a href="/admin/podcasts">Podcasts</a>
+      <a href="/admin/settings">Settings</a>
+      <a class="current" href="/admin/text">Page text</a>
+      <a href="/admin/submissions">Reviews &amp; comments</a>
+    </nav>
+    <div class="admin-header-right"><a href="/admin/logout">Sign out</a></div>
+  </header>
+  <main class="cms-layout">
+    <section class="cms-main">
+      <div class="cms-page-heading">
+        <div>
+          <span class="eyebrow">Public website copy</span>
+          <h1 class="display">Edit page text</h1>
+          <p>Update the main text shown on the homepage and footer.</p>
+        </div>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for c, m in messages %}<p class="flash-message {{ c }}">{{ m }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <form class="cms-form" method="post" action="/admin/text/save" style="max-width:760px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% for key, label, default in fields %}
+          <div class="field">
+            <label>{{ label }}</label>
+            <textarea name="{{ key }}" rows="{% if 'text' in key or 'subheading' in key %}4{% else %}2{% endif %}">{{ values[key] }}</textarea>
+          </div>
+        {% endfor %}
+        <div class="cms-form-actions">
+          <button class="button button-dark" type="submit">Save page text</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

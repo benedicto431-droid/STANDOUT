@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings | Admin</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <a class="admin-brand" href="/admin"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt=""><span>Admin</span></a>
+    <nav class="admin-tools">
+      <a href="/admin">Inbox</a>
+      <a href="/admin/content">Content</a>
+      <a href="/admin/podcasts">Podcasts</a>
+      <a class="current" href="/admin/settings">Settings</a>
+      <a href="/admin/text">Page text</a>
+      <a href="/admin/submissions">Reviews &amp; comments</a>
+    </nav>
+    <div class="admin-header-right"><a href="/admin/logout">Sign out</a></div>
+  </header>
+  <main class="cms-layout">
+    <section class="cms-main">
+      <div class="cms-page-heading">
+        <div>
+          <span class="eyebrow">Appearance</span>
+          <h1 class="display">Site settings</h1>
+          <p>Change the primary colour, accent colour and site name.</p>
+        </div>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for c, m in messages %}<p class="flash-message {{ c }}">{{ m }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <form class="cms-form" method="post" action="/admin/settings/save" style="max-width:620px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+          <label>Site name</label>
+          <input name="site_name" value="{{ site_name }}">
+        </div>
+        <div class="field">
+          <label>Primary colour (buttons, links, accents)</label>
+          <input name="primary_color" type="color" value="{{ primary_color }}" style="height:48px;">
+        </div>
+        <div class="field">
+          <label>Accent colour (dark backgrounds)</label>
+          <input name="accent_color" type="color" value="{{ accent_color }}" style="height:48px;">
+        </div>
+        <div class="cms-form-actions">
+          <button class="button button-dark" type="submit">Save settings</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
