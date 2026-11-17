@@ -85,13 +85,10 @@ DATABASE_AVAILABLE = False
 try:
     engine = create_engine(database_url, **engine_options)
     DatabaseSession = sessionmaker(bind=engine, expire_on_commit=False)
-    # Try to create tables to verify the connection
     Base.metadata.create_all(engine)
     DATABASE_AVAILABLE = True
     app.logger.info("Database connection established successfully.")
 except Exception as exc:
-    # Catch all exceptions (including OperationalError for SSL issues)
-    # so the app can still boot without a database.
     DATABASE_AVAILABLE = False
     engine = None
     DatabaseSession = None
@@ -174,6 +171,37 @@ class PublicSubmission(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
 
+class Podcast(Base):
+    __tablename__ = "podcasts"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False, default="")
+    audio_url = Column(String(1000), nullable=False)
+    cover_image_url = Column(String(1000), nullable=True)
+    episode_number = Column(Integer, nullable=True)
+    status = Column(String(16), nullable=False, default="published")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class SiteSettings(Base):
+    __tablename__ = "site_settings"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(80), nullable=False, unique=True, index=True)
+    value = Column(Text, nullable=False, default="")
+
+
+class PageText(Base):
+    __tablename__ = "page_text"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(80), nullable=False, unique=True, index=True)
+    label = Column(String(200), nullable=False)
+    value = Column(Text, nullable=False, default="")
+
+
 CONTENT_TYPES = {
     "blog": "Blog post",
     "article": "Article",
@@ -181,6 +209,74 @@ CONTENT_TYPES = {
     "project_update": "Project update",
     "other": "Other",
 }
+
+
+def get_setting(key, default=""):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        return default
+    try:
+        with DatabaseSession() as db:
+            row = db.query(SiteSettings).filter_by(key=key).first()
+            return row.value if row else default
+    except Exception:
+        return default
+
+
+def set_setting(key, value):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        return False
+    try:
+        with DatabaseSession() as db:
+            row = db.query(SiteSettings).filter_by(key=key).first()
+            if row:
+                row.value = value
+            else:
+                db.add(SiteSettings(key=key, value=value))
+            db.commit()
+        return True
+    except Exception:
+        return False
+
+
+def get_page_text(key, default=""):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        return default
+    try:
+        with DatabaseSession() as db:
+            row = db.query(PageText).filter_by(key=key).first()
+            return row.value if row else default
+    except Exception:
+        return default
+
+
+def set_page_text(key, label, value):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        return False
+    try:
+        with DatabaseSession() as db:
+            row = db.query(PageText).filter_by(key=key).first()
+            if row:
+                row.value = value
+                row.label = label
+            else:
+                db.add(PageText(key=key, label=label, value=value))
+            db.commit()
+        return True
+    except Exception:
+        return False
+
+
+@app.context_processor
+def inject_settings():
+    return {
+        "primary_color": get_setting("primary_color", "#f05a19"),
+        "accent_color": get_setting("accent_color", "#252a30"),
+        "site_name": get_setting("site_name", "STANDOUT B&C"),
+        "hero_heading": get_page_text("hero_heading", "Build with confidence."),
+        "hero_subheading": get_page_text("hero_subheading", "From the first conversation to the final handover, we bring clear planning, dependable workmanship and a steady team to every build."),
+        "about_text": get_page_text("about_text", "STANDOUT B&C is a Nairobi building and construction firm focused on making complex work feel manageable."),
+        "footer_text": get_page_text("footer_text", "Building with confidence in Nairobi."),
+    }
 
 
 def csrf_token():
@@ -527,6 +623,18 @@ def community():
         except Exception as exc:
             app.logger.warning("Community DB error: %s", exc)
     return render_template("community.html", reviews=reviews, comments=comments)
+
+
+@app.get("/podcasts")
+def podcasts_page():
+    pods = []
+    if DATABASE_AVAILABLE and DatabaseSession:
+        try:
+            with DatabaseSession() as db:
+                pods = db.query(Podcast).filter_by(status="published").order_by(desc(Podcast.episode_number), desc(Podcast.created_at)).all()
+        except Exception as exc:
+            app.logger.warning("Podcasts DB error: %s", exc)
+    return render_template("podcasts.html", podcasts=pods)
 
 
 @app.post("/api/ai-chat")
@@ -991,6 +1099,114 @@ def admin_submission_delete(submission_id):
         app.logger.warning("Delete submission error: %s", exc)
         flash("Submissions are temporarily unavailable.", "error")
     return redirect(url_for("admin_submissions"))
+
+
+# ---------- Podcasts admin ----------
+@app.get("/admin/podcasts")
+@login_required
+def admin_podcasts():
+    edit_id = request.args.get("edit", type=int)
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Database unavailable.", "error")
+        return render_template("admin_podcasts.html", podcasts=[], editing=None)
+    with DatabaseSession() as db:
+        podcasts = db.query(Podcast).order_by(desc(Podcast.created_at)).all()
+        editing = db.query(Podcast).filter_by(id=edit_id).first() if edit_id else None
+    return render_template("admin_podcasts.html", podcasts=podcasts, editing=editing)
+
+
+@app.post("/admin/podcasts/save")
+@login_required
+def admin_podcasts_save():
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Database unavailable.", "error")
+        return redirect(url_for("admin_podcasts"))
+    pid = request.form.get("podcast_id", type=int)
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    audio_url = request.form.get("audio_url", "").strip()
+    cover = request.form.get("cover_image_url", "").strip()
+    episode = request.form.get("episode_number", type=int)
+    status = request.form.get("status", "published")
+
+    if not title or not audio_url:
+        flash("Title and audio URL are required.", "error")
+        return redirect(url_for("admin_podcasts"))
+    with DatabaseSession() as db:
+        pod = db.query(Podcast).filter_by(id=pid).first() if pid else Podcast()
+        pod.title = title
+        pod.description = description
+        pod.audio_url = audio_url
+        pod.cover_image_url = cover or None
+        pod.episode_number = episode
+        pod.status = status
+        pod.updated_at = datetime.utcnow()
+        db.add(pod)
+        db.commit()
+    flash("Podcast saved.", "success")
+    return redirect(url_for("admin_podcasts"))
+
+
+@app.post("/admin/podcasts/<int:pid>/delete")
+@login_required
+def admin_podcasts_delete(pid):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Database unavailable.", "error")
+        return redirect(url_for("admin_podcasts"))
+    with DatabaseSession() as db:
+        pod = db.query(Podcast).filter_by(id=pid).first()
+        if pod:
+            db.delete(pod)
+            db.commit()
+    flash("Podcast deleted.", "success")
+    return redirect(url_for("admin_podcasts"))
+
+
+# ---------- Site settings ----------
+@app.get("/admin/settings")
+@login_required
+def admin_settings():
+    return render_template(
+        "admin_settings.html",
+        primary_color=get_setting("primary_color", "#f05a19"),
+        accent_color=get_setting("accent_color", "#252a30"),
+        site_name=get_setting("site_name", "STANDOUT B&C"),
+    )
+
+
+@app.post("/admin/settings/save")
+@login_required
+def admin_settings_save():
+    set_setting("primary_color", request.form.get("primary_color", "#f05a19"))
+    set_setting("accent_color", request.form.get("accent_color", "#252a30"))
+    set_setting("site_name", request.form.get("site_name", "STANDOUT B&C").strip())
+    flash("Settings saved.", "success")
+    return redirect(url_for("admin_settings"))
+
+
+# ---------- Page text ----------
+PAGE_TEXT_FIELDS = [
+    ("hero_heading", "Homepage hero heading", "Build with confidence."),
+    ("hero_subheading", "Homepage hero subheading", "From the first conversation to the final handover, we bring clear planning, dependable workmanship and a steady team to every build."),
+    ("about_text", "About section text", "STANDOUT B&C is a Nairobi building and construction firm focused on making complex work feel manageable."),
+    ("footer_text", "Footer tagline", "Building with confidence in Nairobi."),
+]
+
+
+@app.get("/admin/text")
+@login_required
+def admin_text():
+    values = {key: get_page_text(key, default) for key, _, default in PAGE_TEXT_FIELDS}
+    return render_template("admin_text.html", fields=PAGE_TEXT_FIELDS, values=values)
+
+
+@app.post("/admin/text/save")
+@login_required
+def admin_text_save():
+    for key, label, _ in PAGE_TEXT_FIELDS:
+        set_page_text(key, label, request.form.get(key, "").strip())
+    flash("Page text updated.", "success")
+    return redirect(url_for("admin_text"))
 
 
 @app.errorhandler(400)
