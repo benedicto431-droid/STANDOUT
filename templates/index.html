@@ -31,6 +31,7 @@
       <a href="#about">About</a>
       <a href="#services">Services</a>
       <a href="#approach">How we work</a>
+      <a href="#portfolio">Gallery</a>
       <a href="/journal">Journal</a>
       <a href="/podcasts">Podcasts</a>
       <a href="/community">Reviews</a>
@@ -58,22 +59,23 @@
             </a>
           </div>
         </div>
-       <div class="hero-visual">
-  <div class="hero-slider">
-    <img src="{{ url_for('static', filename='images/image1.jpeg') }}" alt="Construction site 1" class="hero-slide active">
-    <img src="{{ url_for('static', filename='images/image2.jpeg') }}" alt="Construction site 2" class="hero-slide">
-    <img src="{{ url_for('static', filename='images/image5.jpeg') }}" alt="Construction site 5" class="hero-slide">
-    <img src="{{ url_for('static', filename='images/image7.jpeg') }}" alt="Construction site 7" class="hero-slide">
-    <img src="{{ url_for('static', filename='images/image8.jpeg') }}" alt="Construction site 8" class="hero-slide">
-  </div>
-  <div class="hero-slider-dots">
-    <span class="dot active" data-slide="0"></span>
-    <span class="dot" data-slide="1"></span>
-    <span class="dot" data-slide="2"></span>
-    <span class="dot" data-slide="3"></span>
-    <span class="dot" data-slide="4"></span>
-  </div>
-</div>
+
+        <div class="hero-visual">
+          <div class="hero-slider" id="hero-slider">
+            <img src="{{ url_for('static', filename='images/image1.jpeg') }}" data-full="{{ url_for('static', filename='images/image1.jpeg') }}" alt="Construction site 1" class="hero-slide active">
+            <img src="{{ url_for('static', filename='images/image2.jpeg') }}" data-full="{{ url_for('static', filename='images/image2.jpeg') }}" alt="Construction site 2" class="hero-slide">
+            <img src="{{ url_for('static', filename='images/image5.jpeg') }}" data-full="{{ url_for('static', filename='images/image5.jpeg') }}" alt="Construction site 5" class="hero-slide">
+            <img src="{{ url_for('static', filename='images/image7.jpeg') }}" data-full="{{ url_for('static', filename='images/image7.jpeg') }}" alt="Construction site 7" class="hero-slide">
+            <img src="{{ url_for('static', filename='images/image8.jpeg') }}" data-full="{{ url_for('static', filename='images/image8.jpeg') }}" alt="Construction site 8" class="hero-slide">
+          </div>
+          <div class="hero-slider-dots">
+            <span class="dot active" data-slide="0"></span>
+            <span class="dot" data-slide="1"></span>
+            <span class="dot" data-slide="2"></span>
+            <span class="dot" data-slide="3"></span>
+            <span class="dot" data-slide="4"></span>
+          </div>
+        </div>
       </div>
       <div class="hero-index"><span>01</span> / BUILT ON TRUST</div>
     </section>
@@ -102,7 +104,6 @@
       </div>
     </section>
 
-    <!-- ====== SERVICES (CLASSIFIED) ====== -->
     <section class="section services-section" id="services">
       <div class="section-inner">
         <div class="services-intro reveal" style="max-width:640px; margin-bottom:56px;">
@@ -113,7 +114,6 @@
         </div>
 
         <div class="service-categories">
-          <!-- Category 1: CAD / Design -->
           <article class="service-category reveal">
             <header class="service-category-head">
               <span class="service-category-number">01</span>
@@ -130,7 +130,6 @@
             </ul>
           </article>
 
-          <!-- Category 2: Structural Works -->
           <article class="service-category reveal">
             <header class="service-category-head">
               <span class="service-category-number">02</span>
@@ -147,7 +146,6 @@
             </ul>
           </article>
 
-          <!-- Category 3: Finishes -->
           <article class="service-category reveal">
             <header class="service-category-head">
               <span class="service-category-number">03</span>
@@ -165,7 +163,6 @@
             </ul>
           </article>
 
-          <!-- Category 4: MEP -->
           <article class="service-category reveal">
             <header class="service-category-head">
               <span class="service-category-number">04</span>
@@ -199,19 +196,33 @@
       </div>
     </section>
 
+    <!-- ====== PROJECT GALLERY (lightbox enabled) ====== -->
     <section class="portfolio-section" id="portfolio">
-      <div class="section-inner portfolio-panel reveal">
-        <div class="portfolio-copy">
-          <span class="eyebrow">Project gallery</span>
-          <h2 class="display">Our work deserves a proper introduction.</h2>
-          <p>We’re preparing a selection of completed work to share here. Until the company provides project photography, this gallery stays honest and clear.</p>
-        </div>
-        <div class="portfolio-placeholder">
-          <div class="gallery-note">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/></svg>
-            <strong>Project photos coming from the company</strong>
-            <span>No sample projects or placeholder imagery.</span>
+      <div class="section-inner">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Project gallery</span>
+            <h2 class="display">A closer look at the work.</h2>
           </div>
+          <a class="text-link" href="#contact">Start a project <span aria-hidden="true">→</span></a>
+        </div>
+        <p class="gallery-hint">Tap or click any image to zoom, pan, download, and compare across the gallery.</p>
+        <div class="gallery-scroll" id="gallery-scroll" tabindex="0" aria-label="Project photos, scroll horizontally">
+          <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename='images/image1.jpeg') }}" aria-label="Open image 1">
+            <img src="{{ url_for('static', filename='images/image1.jpeg') }}" alt="Construction photo 1" loading="lazy">
+          </button>
+          <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename='images/image2.jpeg') }}" aria-label="Open image 2">
+            <img src="{{ url_for('static', filename='images/image2.jpeg') }}" alt="Construction photo 2" loading="lazy">
+          </button>
+          <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename='images/image5.jpeg') }}" aria-label="Open image 5">
+            <img src="{{ url_for('static', filename='images/image5.jpeg') }}" alt="Construction photo 5" loading="lazy">
+          </button>
+          <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename='images/image7.jpeg') }}" aria-label="Open image 7">
+            <img src="{{ url_for('static', filename='images/image7.jpeg') }}" alt="Construction photo 7" loading="lazy">
+          </button>
+          <button class="gallery-thumb" type="button" data-full="{{ url_for('static', filename='images/image8.jpeg') }}" aria-label="Open image 8">
+            <img src="{{ url_for('static', filename='images/image8.jpeg') }}" alt="Construction photo 8" loading="lazy">
+          </button>
         </div>
       </div>
     </section>
@@ -304,6 +315,32 @@
         </form>
       </div>
     </section>
+
+    <!-- ====== OFFICE MAP ====== -->
+    <section class="section map-section" id="visit">
+      <div class="section-inner">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Find us</span>
+            <h2 class="display">Visit our office in Utawala.</h2>
+          </div>
+          <a class="text-link" href="https://www.google.com/maps/search/Park+Plaza+Building+Eastern+Bypass+Utawala+Nairobi" target="_blank" rel="noopener">Open in Google Maps <span aria-hidden="true">→</span></a>
+        </div>
+        <div class="map-embed">
+          <iframe
+            title="STANDOUT B&C office — Park Plaza Building, Eastern Bypass, Utawala, Nairobi"
+            src="https://www.google.com/maps?q=Park%20Plaza%20Building%2C%20Eastern%20Bypass%2C%20Utawala%2C%20Nairobi&output=embed"
+            width="100%"
+            height="420"
+            style="border:0;"
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+            allowfullscreen>
+          </iframe>
+        </div>
+        <p class="map-caption">Park Plaza Building, Eastern Bypass, Utawala, Nairobi · Call 0731 157 929 for directions.</p>
+      </div>
+    </section>
   </main>
 
   <footer class="site-footer">
@@ -330,6 +367,26 @@
   <button class="chat-launcher" id="chat-launcher" type="button" aria-label="Open chat" aria-expanded="false" aria-controls="chat-window">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z"/><path d="M8 10h8M8 13h5"/></svg>
   </button>
+
+  <!-- ====== LIGHTBOX ====== -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Image viewer" hidden>
+    <div class="lightbox-toolbar">
+      <span class="lightbox-counter" id="lb-counter">1 / 10</span>
+      <div class="lightbox-actions">
+        <button type="button" id="lb-zoom-out" aria-label="Zoom out">−</button>
+        <button type="button" id="lb-zoom-in" aria-label="Zoom in">+</button>
+        <button type="button" id="lb-reset" aria-label="Reset zoom">Reset</button>
+        <a id="lb-download" href="#" download aria-label="Download image" class="lb-download">Download</a>
+        <button type="button" id="lb-close" aria-label="Close viewer">×</button>
+      </div>
+    </div>
+    <button type="button" class="lightbox-nav lb-prev" id="lb-prev" aria-label="Previous image">‹</button>
+    <div class="lightbox-stage" id="lb-stage">
+      <img id="lb-image" src="" alt="Zoomable project image" draggable="false">
+    </div>
+    <button type="button" class="lightbox-nav lb-next" id="lb-next" aria-label="Next image">›</button>
+  </div>
+
   <script src="{{ url_for('static', filename='js/site.js') }}" defer></script>
 </body>
 </html>
