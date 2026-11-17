@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <title>Images | Admin</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <a class="admin-brand" href="/admin"><img src="{{ url_for('static', filename='images/standout-logo.jpeg') }}" alt=""><span>Admin</span></a>
+    <nav class="admin-tools">
+      <a href="/admin">Inbox</a>
+      <a href="/admin/content">Content</a>
+      <a href="/admin/podcasts">Podcasts</a>
+      <a class="current" href="/admin/images">Images</a>
+      <a href="/admin/settings">Settings</a>
+      <a href="/admin/text">Page text</a>
+      <a href="/admin/submissions">Reviews &amp; comments</a>
+    </nav>
+    <div class="admin-header-right"><a href="/admin/logout">Sign out</a></div>
+  </header>
+  <main class="cms-layout">
+    <section class="cms-main">
+      <div class="cms-page-heading">
+        <div>
+          <span class="eyebrow">Media library</span>
+          <h1 class="display">Images</h1>
+          <p>Add hero slider images and project gallery photos. Use a full http(s) URL for each image.</p>
+        </div>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for c, m in messages %}<p class="flash-message {{ c }}">{{ m }}</p>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      <div class="cms-columns">
+        <section class="cms-editor">
+          <div class="cms-section-heading">
+            <div><span class="eyebrow">{{ 'Edit image' if editing else 'New image' }}</span></div>
+          </div>
+          <form class="cms-form" method="post" action="/admin/images/save">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if editing %}<input type="hidden" name="image_id" value="{{ editing.id }}">{% endif %}
+            <div class="field">
+              <label>Title / description</label>
+              <input name="title" maxlength="200" value="{{ editing.title if editing else '' }}" placeholder="e.g. Site progress, Utawala">
+            </div>
+            <div class="field">
+              <label>Image URL</label>
+              <input name="image_url" type="url" required value="{{ editing.image_url if editing else '' }}" placeholder="https://...">
+            </div>
+            <div class="cms-form-row">
+              <div class="field">
+                <label>Category</label>
+                <select name="category">
+                  <option value="gallery" {% if not editing or editing.category == 'gallery' %}selected{% endif %}>Project gallery</option>
+                  <option value="hero" {% if editing and editing.category == 'hero' %}selected{% endif %}>Hero slider</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Sort order</label>
+                <input name="sort_order" type="number" value="{{ editing.sort_order if editing else 0 }}">
+              </div>
+            </div>
+            <div class="field">
+              <label><input name="is_active" type="checkbox" {% if not editing or editing.is_active %}checked{% endif %}> Active (visible on the website)</label>
+            </div>
+            <div class="cms-form-actions">
+              <button class="button button-dark" type="submit">Save image</button>
+              {% if editing %}<a class="admin-button" href="/admin/images">Cancel</a>{% endif %}
+            </div>
+          </form>
+        </section>
+        <section class="cms-library">
+          <div class="cms-section-heading"><div><span class="eyebrow">All images</span></div><span class="inbox-count">{{ images|length }}</span></div>
+          {% if images %}
+            <div class="cms-post-list">
+              {% for img in images %}
+                <article class="cms-post-item">
+                  <div class="cms-post-meta"><span>{{ img.category }}</span><span>{{ 'active' if img.is_active else 'hidden' }}</span></div>
+                  <img src="{{ img.image_url }}" alt="{{ img.title }}" style="width:100%; height:auto; max-height:160px; object-fit:cover; margin:8px 0;">
+                  <h3>{{ img.title or 'Untitled image' }}</h3>
+                  <div class="cms-post-actions">
+                    <a class="admin-button" href="/admin/images?edit={{ img.id }}">Edit</a>
+                    <form method="post" action="/admin/images/{{ img.id }}/delete" data-confirm="Delete this image?">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button class="admin-button danger" type="submit">Delete</button>
+                    </form>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="cms-empty"><strong>No images yet.</strong><p>Add your first image using the form.</p></div>
+          {% endif %}
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
