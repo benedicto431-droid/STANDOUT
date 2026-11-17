@@ -184,7 +184,16 @@ class Podcast(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+class SiteImage(Base):
+    __tablename__ = "site_images"
 
+    id = Column(Integer, primary_key=True)
+    title = Column(String(200), nullable=False, default="")
+    image_url = Column(String(1000), nullable=False)
+    category = Column(String(32), nullable=False, default="gallery")  # gallery | hero
+    sort_order = Column(Integer, nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 class SiteSettings(Base):
     __tablename__ = "site_settings"
 
@@ -543,7 +552,109 @@ def save_public_submission(kind, post_id=None):
 def health():
     return jsonify({"status": "ok", "database": DATABASE_AVAILABLE})
 
+# ---------- Site images ----------
+@app.get("/admin/images")
+@login_required
+def admin_images():
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Database unavailable.", "error")
+        return render_template("admin_images.html", images=[], editing=None)
+    edit_id = request.args.get("edit", type=int)
+    with DatabaseSession() as db:
+        images = db.query(SiteImage).order_by(SiteImage.sort_order, SiteImage.id).all()
+        editing = db.query(SiteImage).filter_by(id=edit_id).first() if edit_id else None
+    return render_template("admin_images.html", images=images, editing=editing)
 
+
+@app.post("/admin/images/save")
+@login_required
+def admin_images_save():
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Database unavailable.", "error")
+        return redirect(url_for("admin_images"))
+    image_id = request.form.get("image_id", type=int)
+    title = request.form.get("title", "").strip()
+    image_url = request.form.get("image_url", "").strip()
+    category = request.form.get("category", "gallery")
+    sort_order = request.form.get("sort_order", type=int) or 0
+    is_active = request.form.get("is_active") == "on"
+
+    if not image_url:
+        flash("Image URL is required.", "error")
+        return redirect(url_for("admin_images"))
+
+    with DatabaseSession() as db:
+        img = db.query(SiteImage).filter_by(id=image_id).first() if image_id else SiteImage()
+        img.title = title
+        img.image_url = image_url
+        img.category = category
+        img.sort_order = sort_order
+        img.is_active = is_active
+        db.add(img)
+        db.commit()
+    flash("Image saved.", "success")
+    return redirect(url_for("admin_images"))
+
+
+@app.post("/admin/images/<int:image_id>/delete")
+@login_required
+def admin_images_delete(image_id):
+    if not DATABASE_AVAILABLE or not DatabaseSession:
+        flash("Database unavailable.", "error")
+        return redirect(url_for("admin_images"))
+    with DatabaseSession() as db:
+        img = db.query(SiteImage).filter_by(id=image_id).first()
+        if img:
+            db.delete(img)
+            db.commit()
+    flash("Image deleted.", "success")
+    return redirect(url_for("admin_images"))
+
+
+@app.get("/")
+def home():
+    recent_posts = []
+    recent_reviews = []
+    hero_images = []
+    gallery_images = []
+    if DATABASE_AVAILABLE and DatabaseSession:
+        try:
+            with DatabaseSession() as db:
+                recent_posts = (
+                    db.query(ContentPost)
+                    .filter_by(status="published")
+                    .order_by(desc(ContentPost.published_at), desc(ContentPost.id))
+                    .limit(3)
+                    .all()
+                )
+                recent_reviews = (
+                    db.query(PublicSubmission)
+                    .filter_by(kind="review", status="approved")
+                    .order_by(desc(PublicSubmission.created_at), desc(PublicSubmission.id))
+                    .limit(3)
+                    .all()
+                )
+                hero_images = (
+                    db.query(SiteImage)
+                    .filter_by(category="hero", is_active=True)
+                    .order_by(SiteImage.sort_order, SiteImage.id)
+                    .all()
+                )
+                gallery_images = (
+                    db.query(SiteImage)
+                    .filter_by(category="gallery", is_active=True)
+                    .order_by(SiteImage.sort_order, SiteImage.id)
+                    .all()
+                )
+        except Exception as exc:
+            app.logger.warning("Home page DB query failed: %s", exc)
+    return render_template(
+        "index.html",
+        recent_posts=recent_posts,
+        recent_reviews=recent_reviews,
+        hero_images=hero_images,
+        gallery_images=gallery_images,
+    )
 @app.get("/journal")
 def journal():
     page = max(request.args.get("page", default=1, type=int), 1)
