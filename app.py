@@ -78,6 +78,11 @@ engine_options = {"poolclass": NullPool}
 if database_url.startswith("sqlite:"):
     engine_options["connect_args"] = {"check_same_thread": False}
 
+# ---------------------------------------------------------------------------
+# 1. Create the engine and session factory — but DO NOT create tables yet.
+#    Tables must be created AFTER all model classes below are defined, otherwise
+#    Base.metadata will be empty at create_all() time and no tables get made.
+# ---------------------------------------------------------------------------
 engine = None
 DatabaseSession = None
 DATABASE_AVAILABLE = False
@@ -85,7 +90,9 @@ DATABASE_AVAILABLE = False
 try:
     engine = create_engine(database_url, **engine_options)
     DatabaseSession = sessionmaker(bind=engine, expire_on_commit=False)
-    Base.metadata.create_all(engine)
+    # Verify connectivity only — do not create tables yet.
+    with engine.connect():
+        pass
     DATABASE_AVAILABLE = True
     app.logger.info("Database connection established successfully.")
 except Exception as exc:
@@ -96,6 +103,9 @@ except Exception as exc:
     print("WARNING: Database unavailable. Public pages will work, but chat/admin features will be disabled.")
 
 
+# ---------------------------------------------------------------------------
+# 2. Model definitions (must all be defined before create_all is called)
+# ---------------------------------------------------------------------------
 class Conversation(Base):
     __tablename__ = "management_conversations"
 
@@ -212,6 +222,17 @@ class PageText(Base):
     key = Column(String(80), nullable=False, unique=True, index=True)
     label = Column(String(200), nullable=False)
     value = Column(Text, nullable=False, default="")
+
+
+# ---------------------------------------------------------------------------
+# 3. Now that all models exist, create the tables.
+# ---------------------------------------------------------------------------
+if DATABASE_AVAILABLE and engine is not None:
+    try:
+        Base.metadata.create_all(engine)
+        app.logger.info("Database tables ensured/created successfully.")
+    except Exception as exc:
+        app.logger.warning("Failed to create database tables: %s", exc)
 
 
 CONTENT_TYPES = {
